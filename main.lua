@@ -953,6 +953,11 @@ local function refreshTargets()
 
     for _, obj in ipairs(ws:GetChildren()) do
         if not obj:IsA("Model") then continue end
+        if obj.Name == "MI28_Aim" then
+            local old = obj:FindFirstChild("NPCHighlight")
+            if old then old:Destroy() end
+            continue
+        end
         if plrs:GetPlayerFromCharacter(obj) then continue end
 
         local root = obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart")
@@ -1145,6 +1150,18 @@ end)
 task.spawn(function()
     while true do
         for _, obj in ipairs(ws:GetChildren()) do
+            if obj.Name == "MI28_Aim" then
+                local aimPart = obj:FindFirstChild(hitboxCfg.part, true)
+                if aimPart and aimPart:GetAttribute("OrigSize") then
+                    aimPart.Size = aimPart:GetAttribute("OrigSize")
+                    aimPart.Transparency = aimPart:GetAttribute("OrigTrans")
+                    aimPart.BrickColor = BrickColor.new(aimPart:GetAttribute("OrigColor"))
+                    aimPart:SetAttribute("OrigSize", nil)
+                    aimPart:SetAttribute("OrigTrans", nil)
+                    aimPart:SetAttribute("OrigColor", nil)
+                end
+                continue
+            end
             if plrs:GetPlayerFromCharacter(obj) then continue end
             if obj:IsA("Model") then
                 local hum = obj:FindFirstChildOfClass("Humanoid")
