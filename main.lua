@@ -956,6 +956,7 @@ local function refreshTargets()
         if plrs:GetPlayerFromCharacter(obj) then continue end
 
         local root = obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart")
+            or obj:FindFirstChildWhichIsA("BasePart", true)
         local objPos = root and root.Position
         local dist = objPos and (objPos - pPos).Magnitude or math.huge
 
@@ -966,16 +967,28 @@ local function refreshTargets()
         end
 
         local hum = obj:FindFirstChildOfClass("Humanoid")
+        local part = obj:FindFirstChild(cfg.targetPart, true)
+        local isMI28 = obj.Name:lower():find("mi28", 1, true) ~= nil
+        local isNonHumanTarget = isMI28 and (root or obj:FindFirstChildWhichIsA("BasePart", true))
+        if not part and isMI28 then
+            part = root or obj:FindFirstChildWhichIsA("BasePart", true)
+        end
+
         if hum then
             if toggles.DelCorpses and hum.Health <= 0 then continue end
 
-            local part = obj:FindFirstChild(cfg.targetPart)
-            if hum.Health > 0 and part and not obj:FindFirstChild("REVIVE") then
+            if hum.Health > 0 and (part or isNonHumanTarget) and not obj:FindFirstChild("REVIVE") then
                 inRange[#inRange + 1] = {model = obj, dist = dist}
             else
                 local old = obj:FindFirstChild("NPCHighlight")
                 if old then old:Destroy() end
             end
+        elseif isNonHumanTarget then
+            -- MI28 can be highlighted even when the configured target part is absent.
+            inRange[#inRange + 1] = {model = obj, dist = dist}
+        else
+            local old = obj:FindFirstChild("NPCHighlight")
+            if old then old:Destroy() end
         end
     end
 
@@ -1135,10 +1148,18 @@ task.spawn(function()
             if plrs:GetPlayerFromCharacter(obj) then continue end
             if obj:IsA("Model") then
                 local hum = obj:FindFirstChildOfClass("Humanoid")
-                local tPart = obj:FindFirstChild(hitboxCfg.part)
+                local tPart = obj:FindFirstChild(hitboxCfg.part, true)
+                local isMI28 = obj.Name:lower():find("mi28", 1, true) ~= nil
+                if not tPart and isMI28 then
+                    tPart = obj:FindFirstChild("HumanoidRootPart", true)
+                        or obj.PrimaryPart
+                        or obj:FindFirstChild("30MMBody", true)
+                        or obj:FindFirstChildWhichIsA("BasePart", true)
+                end
+                local isValidTarget = (hum and hum.Health > 0) or isMI28
 
                 if tPart then
-                    if toggles.Hitboxes and hum and hum.Health > 0 then
+                    if toggles.Hitboxes and isValidTarget then
                         if not tPart:GetAttribute("OrigSize") then
                             tPart:SetAttribute("OrigSize", tPart.Size)
                             tPart:SetAttribute("OrigTrans", tPart.Transparency)
