@@ -212,6 +212,8 @@ minBtn.MouseButton1Click:Connect(function()
         scroll.Visible = false
         header.Visible = false
         topAccent.Visible = false
+        -- The size constraint otherwise forces the minimized window to stay 280x320.
+        sizeConstraint.Enabled = false
         main.ClipsDescendants = false
         main.Size = UDim2.new(0, 48, 0, 48)
         minBtn.Parent = main
@@ -221,6 +223,7 @@ minBtn.MouseButton1Click:Connect(function()
         minBtn.BackgroundColor3 = C.accentDark
     else
         main.Size = origSize
+        sizeConstraint.Enabled = true
         scroll.Visible = true
         header.Visible = true
         topAccent.Visible = true
