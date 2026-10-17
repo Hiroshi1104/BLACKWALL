@@ -15,7 +15,8 @@ local toggles = {
     EnemyHP = false,
     PlayerESP = false,
     ItemESP = false,
-    Crosshair = true,
+    Crosshair = false,
+    Fly = false,
     Noclip = false,
     Hitboxes = false,
     Fullbright = false,
@@ -383,6 +384,7 @@ createToggle("Enemy HP", "EnemyHP")
 createToggle("Player ESP", "PlayerESP")
 createToggle("My HP", "SelfHP")
 createToggle("Noclip", "Noclip")
+createToggle("Fly", "Fly")
 createToggle("Item ESP", "ItemESP")
 createToggle("Crosshair", "Crosshair")
 createToggle("Big Hitboxes", "Hitboxes")
@@ -1108,6 +1110,86 @@ rs.Stepped:Connect(function()
     if toggles.Noclip then
         setNoclip(true)
     end
+end)
+
+-- Fly toggle (WASD to move, Space to rise, LeftCtrl to descend).
+-- Kept separate from the existing feature implementations.
+local flyVelocity = nil
+local flyGyro = nil
+local flyRoot = nil
+local flyConnection = nil
+local flySpeed = 55
+
+local function stopFly()
+    if flyConnection then
+        flyConnection:Disconnect()
+        flyConnection = nil
+    end
+    if flyVelocity then flyVelocity:Destroy(); flyVelocity = nil end
+    if flyGyro then flyGyro:Destroy(); flyGyro = nil end
+    flyRoot = nil
+end
+
+local function startFly()
+    stopFly()
+    local character = lplr.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return end
+
+    flyRoot = root
+    flyVelocity = Instance.new("BodyVelocity")
+    flyVelocity.Name = "HRSH_FlyVelocity"
+    flyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    flyVelocity.Velocity = Vector3.zero
+    flyVelocity.Parent = root
+
+    flyGyro = Instance.new("BodyGyro")
+    flyGyro.Name = "HRSH_FlyGyro"
+    flyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+    flyGyro.P = 1e4
+    flyGyro.CFrame = root.CFrame
+    flyGyro.Parent = root
+
+    humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+    flyConnection = rs.RenderStepped:Connect(function()
+        if not toggles.Fly or not flyRoot or not flyRoot.Parent or not flyVelocity or not flyGyro then
+            stopFly()
+            return
+        end
+        local camera = ws.CurrentCamera
+        if not camera then return end
+        local direction = Vector3.zero
+        local look = camera.CFrame.LookVector
+        local right = camera.CFrame.RightVector
+        if uis:IsKeyDown(Enum.KeyCode.W) then direction += look end
+        if uis:IsKeyDown(Enum.KeyCode.S) then direction -= look end
+        if uis:IsKeyDown(Enum.KeyCode.D) then direction += right end
+        if uis:IsKeyDown(Enum.KeyCode.A) then direction -= right end
+        if uis:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.yAxis end
+        if uis:IsKeyDown(Enum.KeyCode.LeftControl) then direction -= Vector3.yAxis end
+        if direction.Magnitude > 0 then direction = direction.Unit * flySpeed end
+        flyVelocity.Velocity = direction
+        flyGyro.CFrame = CFrame.lookAt(flyRoot.Position, flyRoot.Position + camera.CFrame.LookVector)
+    end)
+end
+
+local lastFlyState = false
+rs.Heartbeat:Connect(function()
+    if toggles.Fly ~= lastFlyState then
+        lastFlyState = toggles.Fly
+        if toggles.Fly then startFly() else
+            stopFly()
+            local character = lplr.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid then humanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end
+        end
+    end
+end)
+
+lplr.CharacterAdded:Connect(function()
+    task.wait(0.35)
+    if toggles.Fly then startFly() end
 end)
 
 -- Item scanner
