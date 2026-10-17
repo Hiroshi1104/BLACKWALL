@@ -1312,6 +1312,7 @@ local function isGatherExcluded(model)
     return string.find(name, "armata", 1, true) ~= nil
         or string.find(name, "mi28", 1, true) ~= nil
         or string.find(name, "mi-28", 1, true) ~= nil
+        or string.find(name, "dummy", 1, true) ~= nil
 end
 
 local function getGatherRoot(model)
@@ -1340,17 +1341,12 @@ task.spawn(function()
                     end
                 end
 
-                -- Arrange NPCs in compact rows in front of the player.
+                -- Stack all eligible NPCs at the exact same point in front of the player.
                 local forward = myRoot.CFrame.LookVector
-                local right = myRoot.CFrame.RightVector
                 local distance = cfg.gatherDistance
-                local spacing = 3
-                local columns = 5
-                for i, npc in ipairs(candidates) do
+                local targetPos = myRoot.Position + forward * distance
+                for _, npc in ipairs(candidates) do
                     if npc.Parent and not isGatherExcluded(npc) then
-                        local row = math.floor((i - 1) / columns)
-                        local col = ((i - 1) % columns) - (columns - 1) / 2
-                        local targetPos = myRoot.Position + forward * (distance + row * spacing) + right * (col * spacing)
                         local root = getGatherRoot(npc)
                         if root then
                             local offset = root.Position - npc:GetPivot().Position
