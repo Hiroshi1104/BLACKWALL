@@ -1305,14 +1305,32 @@ local function refreshTargets()
     validTargets = tTargets
 end
 
--- Gather NPCs: client-side formation that keeps eligible humanoid NPCs in front.
--- Armata and MI28 (including related aim/vehicle objects) are intentionally excluded.
-local function isGatherExcluded(model)
+-- Gather NPCs: stack eligible NPC roots at one shared point in front of the player.
+-- Excludes Armata/MI28 and any Dummy model, including nested Dummy/DummyTwo models.
+local function hasGatherExcludedName(model)
     local name = string.lower(model.Name)
     return string.find(name, "armata", 1, true) ~= nil
         or string.find(name, "mi28", 1, true) ~= nil
         or string.find(name, "mi-28", 1, true) ~= nil
         or string.find(name, "dummy", 1, true) ~= nil
+end
+
+local function isGatherExcluded(model)
+    local node = model
+    while node and node ~= ws do
+        if node:IsA("Model") and hasGatherExcludedName(node) then
+            return true
+        end
+        node = node.Parent
+    end
+    -- Also skip wrapper models containing a Dummy/vehicle-boss model, so a parent
+    -- wrapper cannot indirectly move an excluded object.
+    for _, descendant in ipairs(model:GetDescendants()) do
+        if descendant:IsA("Model") and hasGatherExcludedName(descendant) then
+            return true
+        end
+    end
+    return false
 end
 
 local function getGatherRoot(model)
@@ -1322,6 +1340,17 @@ local function getGatherRoot(model)
         or model:FindFirstChildWhichIsA("BasePart", true)
 end
 
+local function isNestedInsideAnotherHumanoidModel(model)
+    local parent = model.Parent
+    while parent and parent ~= ws do
+        if parent:IsA("Model") and parent:FindFirstChildOfClass("Humanoid") then
+            return true
+        end
+        parent = parent.Parent
+    end
+    return false
+end
+
 task.spawn(function()
     while true do
         if toggles.GatherNPCs then
@@ -1329,32 +1358,33 @@ task.spawn(function()
             local myRoot = character and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
             if myRoot then
                 local candidates = {}
-                local seen = {}
                 for _, obj in ipairs(ws:GetDescendants()) do
-                    if obj:IsA("Model") and obj ~= character and not seen[obj] and not isGatherExcluded(obj) then
+                    if obj:IsA("Model")
+                        and obj ~= character
+                        and not isNestedInsideAnotherHumanoidModel(obj)
+                        and not isGatherExcluded(obj)
+                        and not plrs:GetPlayerFromCharacter(obj) then
                         local hum = obj:FindFirstChildOfClass("Humanoid")
                         local root = getGatherRoot(obj)
-                        if hum and hum.Health > 0 and root and not plrs:GetPlayerFromCharacter(obj) then
-                            seen[obj] = true
-                            candidates[#candidates + 1] = obj
+                        if hum and hum.Health > 0 and root then
+                            candidates[#candidates + 1] = {model = obj, root = root}
                         end
                     end
                 end
 
-                -- Stack all eligible NPCs at the exact same point in front of the player.
+                -- Give every NPC the same root position and facing. Their models overlap
+                -- instead of being arranged in a line or assigned separate offsets.
                 local forward = myRoot.CFrame.LookVector
-                local distance = cfg.gatherDistance
-                local targetPos = myRoot.Position + forward * distance
-                for _, npc in ipairs(candidates) do
-                    if npc.Parent and not isGatherExcluded(npc) then
-                        local root = getGatherRoot(npc)
-                        if root then
-                            local offset = root.Position - npc:GetPivot().Position
-                            local pivotPos = targetPos - offset
-                            pcall(function()
-                                npc:PivotTo(CFrame.new(pivotPos, pivotPos + forward))
-                            end)
-                        end
+                local targetPos = myRoot.Position + forward * cfg.gatherDistance
+                local targetCFrame = CFrame.lookAt(targetPos, targetPos + forward)
+                for _, entry in ipairs(candidates) do
+                    local npc, root = entry.model, entry.root
+                    if npc.Parent and root.Parent and not isGatherExcluded(npc) then
+                        pcall(function()
+                            local pivot = npc:GetPivot()
+                            local rootOffset = pivot:ToObjectSpace(root.CFrame)
+                            npc:PivotTo(targetCFrame * rootOffset:Inverse())
+                        end)
                     end
                 end
             end
