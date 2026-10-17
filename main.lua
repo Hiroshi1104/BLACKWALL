@@ -64,16 +64,18 @@ local oldGui = cg:FindFirstChild("OmniMenu")
 if oldGui then oldGui:Destroy() end
 
 local C = {
-    bg = Color3.fromRGB(13, 17, 26),
-    panel = Color3.fromRGB(20, 26, 38),
-    panel2 = Color3.fromRGB(27, 35, 49),
-    hover = Color3.fromRGB(35, 46, 64),
-    accent = Color3.fromRGB(72, 145, 255),
-    accentDark = Color3.fromRGB(42, 91, 168),
-    text = Color3.fromRGB(238, 243, 252),
-    muted = Color3.fromRGB(145, 158, 180),
-    off = Color3.fromRGB(64, 75, 94),
-    green = Color3.fromRGB(70, 205, 145),
+    -- BLACKWALL / Cyberpunk 2077-inspired settings palette
+    bg = Color3.fromRGB(2, 3, 6),
+    panel = Color3.fromRGB(7, 8, 12),
+    panel2 = Color3.fromRGB(14, 17, 22),
+    hover = Color3.fromRGB(255, 35, 58),
+    accent = Color3.fromRGB(0, 238, 255), -- cyan = enabled / active
+    accentDark = Color3.fromRGB(255, 35, 58), -- red = outline / warning
+    outline = Color3.fromRGB(255, 35, 58),
+    text = Color3.fromRGB(230, 250, 255),
+    muted = Color3.fromRGB(125, 153, 164),
+    off = Color3.fromRGB(255, 35, 58), -- red = disabled
+    green = Color3.fromRGB(0, 238, 255),
 }
 
 local function corner(parent, radius)
@@ -110,8 +112,8 @@ main.Size = UDim2.new(0, 310, 0, 480)
 main.Active = true
 main.Draggable = true
 main.ClipsDescendants = true
-corner(main, 13)
-stroke(main, Color3.fromRGB(56, 73, 101), 0.25, 1)
+corner(main, 3)
+stroke(main, C.outline, 0.05, 1.5)
 local sizeConstraint = Instance.new("UISizeConstraint")
 sizeConstraint.Parent = main
 sizeConstraint.MinSize = Vector2.new(280, 320)
@@ -120,7 +122,7 @@ sizeConstraint.MaxSize = Vector2.new(390, 680)
 local topAccent = Instance.new("Frame")
 topAccent.Parent = main
 topAccent.Size = UDim2.new(1, 0, 0, 3)
-topAccent.BackgroundColor3 = C.accent
+topAccent.BackgroundColor3 = C.outline
 topAccent.BorderSizePixel = 0
 
 local header = Instance.new("Frame")
@@ -134,15 +136,15 @@ local logo = Instance.new("Frame")
 logo.Parent = header
 logo.Position = UDim2.new(0, 14, 0, 13)
 logo.Size = UDim2.new(0, 35, 0, 35)
-logo.BackgroundColor3 = C.accentDark
+logo.BackgroundColor3 = C.outline
 logo.BorderSizePixel = 0
-corner(logo, 10)
+corner(logo, 2)
 local logoText = Instance.new("TextLabel")
 logoText.Parent = logo
 logoText.BackgroundTransparency = 1
 logoText.Size = UDim2.new(1, 0, 1, 0)
 logoText.Font = Enum.Font.GothamBlack
-logoText.Text = "H"
+logoText.Text = "B"
 logoText.TextColor3 = C.text
 logoText.TextSize = 19
 
@@ -152,7 +154,7 @@ title.BackgroundTransparency = 1
 title.Position = UDim2.new(0, 59, 0, 12)
 title.Size = UDim2.new(1, -112, 0, 22)
 title.Font = Enum.Font.GothamBold
-title.Text = "HRSH  /  CONTROL"
+title.Text = "BLACKWALL  /  SETTINGS"
 title.TextColor3 = C.text
 title.TextSize = 14
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -162,7 +164,7 @@ subtitle.BackgroundTransparency = 1
 subtitle.Position = UDim2.new(0, 60, 0, 34)
 subtitle.Size = UDim2.new(1, -112, 0, 15)
 subtitle.Font = Enum.Font.Gotham
-subtitle.Text = "Quickhack panel  •  RightCtrl is default prefix"
+subtitle.Text = "UNAUTHORIZED ACCESS  •  RightCtrl to toggle"
 subtitle.TextColor3 = C.muted
 subtitle.TextSize = 9
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
@@ -201,7 +203,7 @@ local function createSection(name)
     wrap.BorderSizePixel = 0
     local line = Instance.new("Frame")
     line.Parent = wrap
-    line.BackgroundColor3 = C.accent
+    line.BackgroundColor3 = C.outline
     line.BorderSizePixel = 0
     line.Position = UDim2.new(0, 1, 0, 7)
     line.Size = UDim2.new(0, 3, 0, 13)
@@ -230,7 +232,7 @@ local function createToggle(name, key)
     b.BorderSizePixel = 0
     b.ZIndex = 7
     b.AutoButtonColor = false
-    corner(b, 8)
+    corner(b, 2)
     local edge = stroke(b, C.hover, 0.45, 1)
     local label = Instance.new("TextLabel")
     label.Parent = b
@@ -260,9 +262,10 @@ local function createToggle(name, key)
         local on = toggles[key]
         pill.BackgroundColor3 = on and C.accent or C.off
         dot.Position = on and UDim2.new(1, -18, 0.5, -7) or UDim2.new(0, 4, 0.5, -7)
-        b.BackgroundColor3 = on and Color3.fromRGB(24, 37, 57) or C.panel
-        edge.Color = on and C.accentDark or C.hover
-        edge.Transparency = on and 0.1 or 0.45
+        dot.BackgroundColor3 = on and C.bg or Color3.fromRGB(255, 245, 245)
+        b.BackgroundColor3 = C.panel
+        edge.Color = C.outline
+        edge.Transparency = on and 0.05 or 0.25
     end
     paint()
     b.MouseEnter:Connect(function() if not toggles[key] then b.BackgroundColor3 = C.panel2 end end)
@@ -286,8 +289,8 @@ local function createSlider(name, minV, maxV, def, cb)
     container.Size = UDim2.new(1, -24, 0, 65)
     container.BorderSizePixel = 0
     container.ZIndex = 6
-    corner(container, 8)
-    stroke(container, C.hover, 0.5, 1)
+    corner(container, 2)
+    stroke(container, C.outline, 0.35, 1)
 
     local lbl = Instance.new("TextLabel")
     lbl.Parent = container
@@ -444,8 +447,8 @@ keybindButton.AutoButtonColor = false
 keybindButton.Font = Enum.Font.GothamMedium
 keybindButton.Text = ""
 keybindButton.ZIndex = 7
-corner(keybindButton, 8)
-local keybindEdge = stroke(keybindButton, C.hover, 0.45, 1)
+corner(keybindButton, 2)
+local keybindEdge = stroke(keybindButton, C.outline, 0.25, 1)
 local keybindLabel = Instance.new("TextLabel")
 keybindLabel.Parent = keybindButton
 keybindLabel.BackgroundTransparency = 1
