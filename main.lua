@@ -25,6 +25,7 @@ local toggles = {
     InstantInteract = false,
     DelCorpses = false,
     Speed = false,
+    GatherNPCs = false,
     -- Optimization
     LowVisuals = false,
     InstanceOptimizer = false,
@@ -45,6 +46,7 @@ local cfg = {
     outTrans = 0,
     scanRate = 0.5,
     speed = 16,
+    gatherDistance = 8,
 }
 
 local hitboxCfg = {
@@ -394,6 +396,7 @@ createToggle("Fullbright", "Fullbright")
 createToggle("Instant Interact", "InstantInteract")
 createToggle("Del Corpses", "DelCorpses")
 createToggle("Speed Modifier", "Speed")
+createToggle("Gather NPCs", "GatherNPCs")
 
 createSection("Settings")
 createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end)
@@ -401,6 +404,7 @@ createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
 createSlider("Hitbox Size", 1, 20, hitboxCfg.size.X, function(v) hitboxCfg.size = Vector3.new(v, v, v) end)
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
+createSlider("Gather Distance", 1, 30, cfg.gatherDistance, function(v) cfg.gatherDistance = v end)
 
 -- UI-only keybind selector for showing/hiding this menu.
 -- Persist the selected key using executor file APIs when available.
@@ -1300,6 +1304,68 @@ local function refreshTargets()
     end
     validTargets = tTargets
 end
+
+-- Gather NPCs: client-side formation that keeps eligible humanoid NPCs in front.
+-- Armata and MI28 (including related aim/vehicle objects) are intentionally excluded.
+local function isGatherExcluded(model)
+    local name = string.lower(model.Name)
+    return string.find(name, "armata", 1, true) ~= nil
+        or string.find(name, "mi28", 1, true) ~= nil
+        or string.find(name, "mi-28", 1, true) ~= nil
+end
+
+local function getGatherRoot(model)
+    return model.PrimaryPart
+        or model:FindFirstChild("HumanoidRootPart")
+        or model:FindFirstChild("Torso")
+        or model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+task.spawn(function()
+    while true do
+        if toggles.GatherNPCs then
+            local character = lplr.Character
+            local myRoot = character and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
+            if myRoot then
+                local candidates = {}
+                local seen = {}
+                for _, obj in ipairs(ws:GetDescendants()) do
+                    if obj:IsA("Model") and obj ~= character and not seen[obj] and not isGatherExcluded(obj) then
+                        local hum = obj:FindFirstChildOfClass("Humanoid")
+                        local root = getGatherRoot(obj)
+                        if hum and hum.Health > 0 and root and not plrs:GetPlayerFromCharacter(obj) then
+                            seen[obj] = true
+                            candidates[#candidates + 1] = obj
+                        end
+                    end
+                end
+
+                -- Arrange NPCs in compact rows in front of the player.
+                local forward = myRoot.CFrame.LookVector
+                local right = myRoot.CFrame.RightVector
+                local distance = cfg.gatherDistance
+                local spacing = 3
+                local columns = 5
+                for i, npc in ipairs(candidates) do
+                    if npc.Parent and not isGatherExcluded(npc) then
+                        local row = math.floor((i - 1) / columns)
+                        local col = ((i - 1) % columns) - (columns - 1) / 2
+                        local targetPos = myRoot.Position + forward * (distance + row * spacing) + right * (col * spacing)
+                        local root = getGatherRoot(npc)
+                        if root then
+                            local offset = root.Position - npc:GetPivot().Position
+                            local pivotPos = targetPos - offset
+                            pcall(function()
+                                npc:PivotTo(CFrame.new(pivotPos, pivotPos + forward))
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.08)
+    end
+end)
 
 -- Delete corpses loop
 task.spawn(function()
