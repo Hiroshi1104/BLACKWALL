@@ -1452,7 +1452,13 @@ rs.RenderStepped:Connect(function(dt)
     end
 
     for _, npc in ipairs(validTargets) do
-        local torso = npc:FindFirstChild(cfg.targetPart)
+        local torso = npc:FindFirstChild(cfg.targetPart, true)
+        -- MI28 helicopter models may not have the configured humanoid target part.
+        -- Fall back to a usable model part so Aim Assist can lock onto the helicopter.
+        if not torso and npc.Name:lower():find("mi28", 1, true) then
+            torso = npc.PrimaryPart or npc:FindFirstChild("HumanoidRootPart", true)
+                or npc:FindFirstChildWhichIsA("BasePart", true)
+        end
         if torso then
             local sPos, onScreen = cam:WorldToViewportPoint(torso.Position)
             if onScreen then
