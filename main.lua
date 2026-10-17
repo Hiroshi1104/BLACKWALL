@@ -398,7 +398,32 @@ createSlider("Hitbox Size", 1, 20, hitboxCfg.size.X, function(v) hitboxCfg.size 
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 
 -- UI-only keybind selector for showing/hiding this menu.
-local menuToggleKey = Enum.KeyCode.RightControl
+-- Persist the selected key using executor file APIs when available.
+local menuKeyFile = "HRSH_MenuToggleKey.txt"
+local function loadMenuToggleKey()
+    if type(isfile) == "function" and type(readfile) == "function" then
+        local ok, exists = pcall(isfile, menuKeyFile)
+        if ok and exists then
+            local readOk, savedName = pcall(readfile, menuKeyFile)
+            if readOk and type(savedName) == "string" then
+                savedName = savedName:gsub("%s+", "")
+                local success, keyCode = pcall(function() return Enum.KeyCode[savedName] end)
+                if success and keyCode and keyCode ~= Enum.KeyCode.Unknown then
+                    return keyCode
+                end
+            end
+        end
+    end
+    return Enum.KeyCode.RightControl
+end
+
+local function saveMenuToggleKey(keyCode)
+    if type(writefile) == "function" then
+        pcall(writefile, menuKeyFile, keyCode.Name)
+    end
+end
+
+local menuToggleKey = loadMenuToggleKey()
 local waitingForMenuKey = false
 local keybindButton = Instance.new("TextButton")
 keybindButton.Name = "MenuToggleKeybind"
@@ -467,6 +492,7 @@ uis.InputBegan:Connect(function(input, gpe)
             end
             if input.KeyCode ~= Enum.KeyCode.Unknown then
                 menuToggleKey = input.KeyCode
+                saveMenuToggleKey(menuToggleKey)
                 waitingForMenuKey = false
                 keybindValue.Text = menuToggleKey.Name
                 keybindEdge.Color = C.hover
