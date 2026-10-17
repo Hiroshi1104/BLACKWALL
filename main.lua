@@ -54,10 +54,37 @@ local hitboxCfg = {
     refreshRate = 1
 }
 
--- GUI Setup
+-- UI ONLY: refreshed HRSH interface. Feature logic below this block is unchanged.
 local oldGui = cg:FindFirstChild("OmniMenu")
-if oldGui then
-    oldGui:Destroy()
+if oldGui then oldGui:Destroy() end
+
+local C = {
+    bg = Color3.fromRGB(13, 17, 26),
+    panel = Color3.fromRGB(20, 26, 38),
+    panel2 = Color3.fromRGB(27, 35, 49),
+    hover = Color3.fromRGB(35, 46, 64),
+    accent = Color3.fromRGB(72, 145, 255),
+    accentDark = Color3.fromRGB(42, 91, 168),
+    text = Color3.fromRGB(238, 243, 252),
+    muted = Color3.fromRGB(145, 158, 180),
+    off = Color3.fromRGB(64, 75, 94),
+    green = Color3.fromRGB(70, 205, 145),
+}
+
+local function corner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = parent
+    return c
+end
+
+local function stroke(parent, color, transparency, thickness)
+    local s = Instance.new("UIStroke")
+    s.Color = color or C.hover
+    s.Transparency = transparency or 0
+    s.Thickness = thickness or 1
+    s.Parent = parent
+    return s
 end
 
 local gui = Instance.new("ScreenGui")
@@ -71,122 +98,218 @@ gui.Parent = cg
 local main = Instance.new("Frame")
 main.Name = "main"
 main.Parent = gui
-main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+main.BackgroundColor3 = C.bg
 main.BorderSizePixel = 0
-main.Position = UDim2.new(0.05, 0, 0.2, 0)
-main.Size = UDim2.new(0.2, 0, 0.6, 0)
+main.Position = UDim2.new(0.035, 0, 0.17, 0)
+main.Size = UDim2.new(0, 310, 0, 480)
 main.Active = true
 main.Draggable = true
 main.ClipsDescendants = true
-
+corner(main, 13)
+stroke(main, Color3.fromRGB(56, 73, 101), 0.25, 1)
 local sizeConstraint = Instance.new("UISizeConstraint")
 sizeConstraint.Parent = main
-sizeConstraint.MinSize = Vector2.new(150, 250)
-sizeConstraint.MaxSize = Vector2.new(250, 600)
+sizeConstraint.MinSize = Vector2.new(280, 320)
+sizeConstraint.MaxSize = Vector2.new(390, 680)
+
+local topAccent = Instance.new("Frame")
+topAccent.Parent = main
+topAccent.Size = UDim2.new(1, 0, 0, 3)
+topAccent.BackgroundColor3 = C.accent
+topAccent.BorderSizePixel = 0
+
+local header = Instance.new("Frame")
+header.Parent = main
+header.BackgroundColor3 = C.panel
+header.BorderSizePixel = 0
+header.Position = UDim2.new(0, 0, 0, 3)
+header.Size = UDim2.new(1, 0, 0, 62)
+
+local logo = Instance.new("Frame")
+logo.Parent = header
+logo.Position = UDim2.new(0, 14, 0, 13)
+logo.Size = UDim2.new(0, 35, 0, 35)
+logo.BackgroundColor3 = C.accentDark
+logo.BorderSizePixel = 0
+corner(logo, 10)
+local logoText = Instance.new("TextLabel")
+logoText.Parent = logo
+logoText.BackgroundTransparency = 1
+logoText.Size = UDim2.new(1, 0, 1, 0)
+logoText.Font = Enum.Font.GothamBlack
+logoText.Text = "H"
+logoText.TextColor3 = C.text
+logoText.TextSize = 19
 
 local title = Instance.new("TextLabel")
-title.Parent = main
-title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-title.Size = UDim2.new(1, 0, 0, 30)
+title.Parent = header
+title.BackgroundTransparency = 1
+title.Position = UDim2.new(0, 59, 0, 12)
+title.Size = UDim2.new(1, -112, 0, 22)
 title.Font = Enum.Font.GothamBold
-title.Text = "HRSH"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Text = "HRSH  /  CONTROL"
+title.TextColor3 = C.text
 title.TextSize = 14
-title.ZIndex = 20
+title.TextXAlignment = Enum.TextXAlignment.Left
+local subtitle = Instance.new("TextLabel")
+subtitle.Parent = header
+subtitle.BackgroundTransparency = 1
+subtitle.Position = UDim2.new(0, 60, 0, 34)
+subtitle.Size = UDim2.new(1, -112, 0, 15)
+subtitle.Font = Enum.Font.Gotham
+subtitle.Text = "Feature panel  •  RightCtrl to hide"
+subtitle.TextColor3 = C.muted
+subtitle.TextSize = 9
+subtitle.TextXAlignment = Enum.TextXAlignment.Left
 
 local minBtn = Instance.new("TextButton")
-minBtn.Parent = main
-minBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
-minBtn.Position = UDim2.new(1, -30, 0, 0)
-minBtn.Size = UDim2.new(0, 30, 0, 30)
-minBtn.Font = Enum.Font.GothamBold
-minBtn.Text = "-"
-minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-minBtn.TextSize = 16
+minBtn.Parent = header
+minBtn.Position = UDim2.new(1, -42, 0, 15)
+minBtn.Size = UDim2.new(0, 28, 0, 28)
+minBtn.BackgroundColor3 = C.panel2
 minBtn.BorderSizePixel = 0
-minBtn.ZIndex = 30
-minBtn.AutoButtonColor = true
+minBtn.Font = Enum.Font.GothamBold
+minBtn.Text = "—"
+minBtn.TextColor3 = C.text
+minBtn.TextSize = 15
+minBtn.AutoButtonColor = false
+corner(minBtn, 8)
 
 local scroll = Instance.new("ScrollingFrame")
 scroll.Name = "Scroll"
 scroll.Parent = main
 scroll.BackgroundTransparency = 1
 scroll.BorderSizePixel = 0
-scroll.Position = UDim2.new(0, 0, 0, 35)
-scroll.Size = UDim2.new(1, 0, 1, -35)
-scroll.CanvasSize = UDim2.new(0, 0, 0, 950)
-scroll.ScrollBarThickness = 3
+scroll.Position = UDim2.new(0, 0, 0, 73)
+scroll.Size = UDim2.new(1, 0, 1, -81)
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.ScrollBarThickness = 4
+scroll.ScrollBarImageColor3 = C.accent
 scroll.ScrollBarImageTransparency = 0.15
 scroll.ScrollingEnabled = true
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 scroll.ZIndex = 5
 
 local layout = Instance.new("UIListLayout")
 layout.Parent = scroll
-layout.Padding = UDim.new(0, 5)
+layout.Padding = UDim.new(0, 7)
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.FillDirection = Enum.FillDirection.Vertical
+local padding = Instance.new("UIPadding")
+padding.Parent = scroll
+padding.PaddingTop = UDim.new(0, 8)
+padding.PaddingBottom = UDim.new(0, 10)
 
 local isMin = false
 local origSize = main.Size
-
+minBtn.MouseEnter:Connect(function() minBtn.BackgroundColor3 = C.hover end)
+minBtn.MouseLeave:Connect(function() minBtn.BackgroundColor3 = C.panel2 end)
 minBtn.MouseButton1Click:Connect(function()
     isMin = not isMin
     if isMin then
         origSize = main.Size
         scroll.Visible = false
-        title.Visible = false
-        main.BackgroundTransparency = 1
+        header.Visible = false
+        topAccent.Visible = false
         main.ClipsDescendants = false
-        main.Size = UDim2.new(0, 30, 0, 30)
-        main.Active = false
+        main.Size = UDim2.new(0, 48, 0, 48)
+        minBtn.Parent = main
+        minBtn.Position = UDim2.new(0, 10, 0, 10)
+        minBtn.Size = UDim2.new(0, 28, 0, 28)
         minBtn.Text = "+"
-        minBtn.BackgroundColor3 = Color3.fromRGB(40, 150, 40)
+        minBtn.BackgroundColor3 = C.accentDark
     else
         main.Size = origSize
         scroll.Visible = true
-        title.Visible = true
-        main.BackgroundTransparency = 0
+        header.Visible = true
+        topAccent.Visible = true
         main.ClipsDescendants = true
-        main.Active = true
-        minBtn.Position = UDim2.new(1, -30, 0, 0)
-        minBtn.Text = "-"
-        minBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
+        minBtn.Parent = header
+        minBtn.Position = UDim2.new(1, -42, 0, 15)
+        minBtn.Size = UDim2.new(0, 28, 0, 28)
+        minBtn.Text = "—"
+        minBtn.BackgroundColor3 = C.panel2
     end
 end)
 
--- Section label
 local function createSection(name)
+    local wrap = Instance.new("Frame")
+    wrap.Parent = scroll
+    wrap.BackgroundTransparency = 1
+    wrap.Size = UDim2.new(1, -24, 0, 27)
+    wrap.BorderSizePixel = 0
+    local line = Instance.new("Frame")
+    line.Parent = wrap
+    line.BackgroundColor3 = C.accent
+    line.BorderSizePixel = 0
+    line.Position = UDim2.new(0, 1, 0, 7)
+    line.Size = UDim2.new(0, 3, 0, 13)
+    corner(line, 2)
     local lbl = Instance.new("TextLabel")
-    lbl.Parent = scroll
-    lbl.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-    lbl.Size = UDim2.new(0.9, 0, 0, 24)
+    lbl.Parent = wrap
+    lbl.BackgroundTransparency = 1
+    lbl.Position = UDim2.new(0, 11, 0, 0)
+    lbl.Size = UDim2.new(1, -11, 1, 0)
     lbl.Font = Enum.Font.GothamBold
-    lbl.Text = "— " .. name .. " —"
-    lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
+    lbl.Text = string.upper(name)
+    lbl.TextColor3 = C.muted
     lbl.TextSize = 10
-    lbl.BorderSizePixel = 0
-    lbl.ZIndex = 6
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
 end
 
 local function createToggle(name, key)
     local b = Instance.new("TextButton")
     b.Parent = scroll
-    b.BackgroundColor3 = toggles[key] and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(150, 40, 40)
-    b.Size = UDim2.new(0.9, 0, 0, 35)
-    b.Font = Enum.Font.Gotham
-    b.Text = name .. (toggles[key] and ": ON" or ": OFF")
-    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.BackgroundColor3 = C.panel
+    b.Size = UDim2.new(1, -24, 0, 38)
+    b.Font = Enum.Font.GothamMedium
+    b.Text = ""
+    b.TextColor3 = C.text
     b.TextSize = 12
     b.BorderSizePixel = 0
     b.ZIndex = 7
-    b.AutoButtonColor = true
-
+    b.AutoButtonColor = false
+    corner(b, 8)
+    local edge = stroke(b, C.hover, 0.45, 1)
+    local label = Instance.new("TextLabel")
+    label.Parent = b
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.Size = UDim2.new(1, -72, 1, 0)
+    label.Font = Enum.Font.GothamMedium
+    label.Text = name
+    label.TextColor3 = C.text
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    local pill = Instance.new("Frame")
+    pill.Parent = b
+    pill.AnchorPoint = Vector2.new(1, 0.5)
+    pill.Position = UDim2.new(1, -10, 0.5, 0)
+    pill.Size = UDim2.new(0, 42, 0, 22)
+    pill.BorderSizePixel = 0
+    corner(pill, 11)
+    local dot = Instance.new("Frame")
+    dot.Parent = pill
+    dot.Size = UDim2.new(0, 14, 0, 14)
+    dot.Position = UDim2.new(0, 4, 0.5, -7)
+    dot.BorderSizePixel = 0
+    dot.BackgroundColor3 = C.text
+    corner(dot, 7)
+    local function paint()
+        local on = toggles[key]
+        pill.BackgroundColor3 = on and C.accent or C.off
+        dot.Position = on and UDim2.new(1, -18, 0.5, -7) or UDim2.new(0, 4, 0.5, -7)
+        b.BackgroundColor3 = on and Color3.fromRGB(24, 37, 57) or C.panel
+        edge.Color = on and C.accentDark or C.hover
+        edge.Transparency = on and 0.1 or 0.45
+    end
+    paint()
+    b.MouseEnter:Connect(function() if not toggles[key] then b.BackgroundColor3 = C.panel2 end end)
+    b.MouseLeave:Connect(paint)
     b.MouseButton1Click:Connect(function()
         toggles[key] = not toggles[key]
-        b.Text = name .. (toggles[key] and ": ON" or ": OFF")
-        b.BackgroundColor3 = toggles[key] and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(150, 40, 40)
-
+        paint()
         if key == "ESP" and not toggles.ESP then
             for _, v in ipairs(ws:GetDescendants()) do
                 if v.Name == "NPCHighlight" then v:Destroy() end
@@ -195,70 +318,109 @@ local function createToggle(name, key)
     end)
 end
 
+-- Slider controls: click anywhere on the track, drag smoothly, with a live value and thumb.
 local function createSlider(name, minV, maxV, def, cb)
     local container = Instance.new("Frame")
     container.Parent = scroll
-    container.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    container.Size = UDim2.new(0.9, 0, 0, 45)
+    container.BackgroundColor3 = C.panel
+    container.Size = UDim2.new(1, -24, 0, 65)
     container.BorderSizePixel = 0
     container.ZIndex = 6
+    corner(container, 8)
+    stroke(container, C.hover, 0.5, 1)
 
     local lbl = Instance.new("TextLabel")
     lbl.Parent = container
     lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(1, 0, 0.5, 0)
-    lbl.Font = Enum.Font.Gotham
-    lbl.Text = name .. ": " .. tostring(def)
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-    lbl.TextSize = 10
+    lbl.Position = UDim2.new(0, 12, 0, 7)
+    lbl.Size = UDim2.new(1, -88, 0, 19)
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.Text = name
+    lbl.TextColor3 = C.text
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.ZIndex = 7
 
-    local back = Instance.new("Frame")
+    local valueBox = Instance.new("TextLabel")
+    valueBox.Parent = container
+    valueBox.AnchorPoint = Vector2.new(1, 0)
+    valueBox.Position = UDim2.new(1, -11, 0, 7)
+    valueBox.Size = UDim2.new(0, 66, 0, 19)
+    valueBox.BackgroundColor3 = C.panel2
+    valueBox.BorderSizePixel = 0
+    valueBox.Font = Enum.Font.GothamBold
+    valueBox.TextColor3 = C.accent
+    valueBox.TextSize = 11
+    valueBox.Text = tostring(def)
+    valueBox.ZIndex = 8
+    corner(valueBox, 5)
+
+    local back = Instance.new("TextButton")
     back.Parent = container
-    back.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    back.Position = UDim2.new(0.1, 0, 0.6, 0)
-    back.Size = UDim2.new(0.8, 0, 0, 8)
+    back.AutoButtonColor = false
+    back.Text = ""
+    back.BackgroundColor3 = C.off
+    back.Position = UDim2.new(0, 12, 0, 39)
+    back.Size = UDim2.new(1, -24, 0, 7)
     back.BorderSizePixel = 0
     back.ZIndex = 7
+    corner(back, 4)
 
     local fill = Instance.new("Frame")
     fill.Parent = back
-    fill.BackgroundColor3 = Color3.fromRGB(40, 150, 40)
-    fill.Size = UDim2.new((def - minV) / (maxV - minV), 0, 1, 0)
+    fill.BackgroundColor3 = C.accent
+    fill.Size = UDim2.new(math.clamp((def - minV) / (maxV - minV), 0, 1), 0, 1, 0)
     fill.BorderSizePixel = 0
     fill.ZIndex = 8
+    corner(fill, 4)
+
+    local thumb = Instance.new("Frame")
+    thumb.Parent = back
+    thumb.AnchorPoint = Vector2.new(0.5, 0.5)
+    thumb.Position = UDim2.new(math.clamp((def - minV) / (maxV - minV), 0, 1), 0, 0.5, 0)
+    thumb.Size = UDim2.new(0, 15, 0, 15)
+    thumb.BackgroundColor3 = C.text
+    thumb.BorderSizePixel = 0
+    thumb.ZIndex = 9
+    corner(thumb, 8)
+    stroke(thumb, C.accent, 0, 2)
 
     local dragging = false
-    local function update(input)
-        local pos = math.clamp((input.Position.X - back.AbsolutePosition.X) / back.AbsoluteSize.X, 0, 1)
-        fill.Size = UDim2.new(pos, 0, 1, 0)
+    local function updateFromX(x)
+        local width = math.max(1, back.AbsoluteSize.X)
+        local pos = math.clamp((x - back.AbsolutePosition.X) / width, 0, 1)
         local val = minV + (maxV - minV) * pos
-        val = math.floor(val * 100) / 100
-        lbl.Text = name .. ": " .. tostring(val)
+        val = math.floor(val * 100 + 0.5) / 100
+        if maxV - minV >= 10 then val = math.floor(val + 0.5) end
+        local ratio = math.clamp((val - minV) / (maxV - minV), 0, 1)
+        fill.Size = UDim2.new(ratio, 0, 1, 0)
+        thumb.Position = UDim2.new(ratio, 0, 0.5, 0)
+        valueBox.Text = tostring(val)
         if cb then cb(val) end
     end
-
     back.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            update(input)
+            updateFromX(input.Position.X)
         end
     end)
-
-    uis.InputEnded:Connect(function(input)
+    thumb.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
+            dragging = true
+            updateFromX(input.Position.X)
         end
     end)
-
+    uis.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+    end)
     uis.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            update(input)
+            updateFromX(input.Position.X)
         end
     end)
 end
 
--- General section
+-- Existing controls and callbacks are preserved; only their presentation changed.
 createSection("General")
 createToggle("Aim Assist", "AimAssist")
 createToggle("NPC ESP", "ESP")
@@ -274,27 +436,25 @@ createToggle("Instant Interact", "InstantInteract")
 createToggle("Del Corpses", "DelCorpses")
 createToggle("Speed Modifier", "Speed")
 
--- Sliders
 createSection("Settings")
 createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end)
 createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
 createSlider("Hitbox Size", 1, 20, hitboxCfg.size.X, function(v) hitboxCfg.size = Vector3.new(v, v, v) end)
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 
--- Optimization section
 createSection("Optimization")
 createToggle("Low Visuals", "LowVisuals")
 createToggle("Instance Optimizer", "InstanceOptimizer")
 createToggle("Particle Cap", "ParticleCap")
 createToggle("Ultra Potato", "UltraPotato")
 
--- Explicit canvas height avoids executor/UIListLayout differences.
+layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 24)
+end)
 task.defer(function()
-    local contentHeight = layout.AbsoluteContentSize.Y
-    scroll.CanvasSize = UDim2.new(0, 0, 0, math.max(950, contentHeight + 10))
+    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 24)
 end)
 
--- Toggle menu visibility
 uis.InputBegan:Connect(function(input, gpe)
     if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
         main.Visible = not main.Visible
