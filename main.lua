@@ -646,10 +646,20 @@ end
 
 
 -- Player ESP
-local function addPlayerInfoESP(plr, char)
-    if not char then return end
+local function getPlayerESPAnchor(char)
+    -- R6/R15 and streamed/custom rigs may not have every standard part yet.
+    for _, name in ipairs({"Head", "HumanoidRootPart", "UpperTorso", "Torso", "PrimaryPart"}) do
+        local part = name == "PrimaryPart" and char.PrimaryPart or char:FindFirstChild(name)
+        if part and part:IsA("BasePart") then
+            return part
+        end
+    end
+    return char:FindFirstChildWhichIsA("BasePart", true)
+end
 
-    -- Keep the existing player highlight exactly as-is.
+local function addPlayerInfoESP(plr, char)
+    if not char or not char.Parent then return end
+
     local hl = char:FindFirstChild("PlayerHighlight")
     if not hl then
         hl = Instance.new("Highlight")
@@ -660,50 +670,38 @@ local function addPlayerInfoESP(plr, char)
         hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         hl.Parent = char
     end
+    hl.Adornee = char
+    hl.Enabled = true
 
-    -- Team colors:
-    -- BLUE = teammate, RED = enemy, GREEN = neutral/unknown.
-    -- Some games do not use Roblox Player.Team, so also check TeamColor
-    -- and common custom team/faction attributes.
     local function getTeamKey(player)
-        if player.Team then
-            return "team:" .. player.Team:GetFullName()
-        end
-
+        if player.Team then return "team:" .. player.Team:GetFullName() end
         if player.TeamColor and player.TeamColor ~= BrickColor.new("Medium stone grey") then
             return "color:" .. player.TeamColor.Name
         end
-
-        local attrs = {"Team", "team", "Faction", "faction", "Role", "role"}
-        for _, attrName in ipairs(attrs) do
+        for _, attrName in ipairs({"Team", "team", "Faction", "faction", "Role", "role"}) do
             local value = player:GetAttribute(attrName)
-            if value ~= nil then
-                return attrName:lower() .. ":" .. tostring(value):lower()
-            end
+            if value ~= nil then return attrName:lower() .. ":" .. tostring(value):lower() end
         end
-
         return nil
     end
 
-    local myTeam = getTeamKey(lplr)
-    local playerTeam = getTeamKey(plr)
-
+    local myTeam, playerTeam = getTeamKey(lplr), getTeamKey(plr)
     if myTeam and playerTeam then
-        if myTeam == playerTeam then
-            hl.FillColor = Color3.fromRGB(0, 120, 255) -- teammate
-        else
-            hl.FillColor = Color3.fromRGB(220, 50, 50) -- enemy
-        end
+        hl.FillColor = myTeam == playerTeam and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(220, 50, 50)
     else
-        hl.FillColor = Color3.fromRGB(0, 200, 80) -- neutral/unknown
+        hl.FillColor = Color3.fromRGB(0, 200, 80)
     end
 
-    local head = char:FindFirstChild("Head")
     local hum = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not head or not hum or not root then return end
+    local anchor = getPlayerESPAnchor(char)
+    -- Keep the highlight even while character parts are streaming in; retry next refresh.
+    if not anchor or not hum then return end
 
-    local infoGui = head:FindFirstChild("PlayerInfoESP")
+    local infoGui = char:FindFirstChild("PlayerInfoESP", true)
+    if infoGui and not infoGui:IsA("BillboardGui") then
+        infoGui:Destroy()
+        infoGui = nil
+    end
     if not infoGui then
         infoGui = Instance.new("BillboardGui")
         infoGui.Name = "PlayerInfoESP"
@@ -711,8 +709,6 @@ local function addPlayerInfoESP(plr, char)
         infoGui.StudsOffset = Vector3.new(0, 3, 0)
         infoGui.AlwaysOnTop = true
         infoGui.MaxDistance = 2000
-        infoGui.Parent = head
-
         local label = Instance.new("TextLabel")
         label.Name = "Info"
         label.Size = UDim2.new(1, 0, 1, 0)
@@ -724,69 +720,59 @@ local function addPlayerInfoESP(plr, char)
         label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
         label.Parent = infoGui
     end
+    -- Reparent if Head was streamed out or the rig uses a different anchor.
+    if infoGui.Parent ~= anchor then infoGui.Parent = anchor end
+    infoGui.Enabled = true
 
     local label = infoGui:FindFirstChild("Info")
     if not label then return end
-
     local myChar = lplr.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-
-    local distance = 0
-    if myRoot then
-        distance = math.floor((myRoot.Position - root.Position).Magnitude + 0.5)
-    end
-
-    local hp = math.max(0, hum.Health)
-    local maxHp = math.max(1, hum.MaxHealth)
-
-    -- Only the requested player information: name, health, distance.
-    label.Text = string.format(
-        "%s\nHP: %d/%d  |  %d studs",
-        plr.Name,
-        math.floor(hp + 0.5),
-        math.floor(maxHp + 0.5),
-        distance
-    )
+    local distance = myRoot and math.floor((myRoot.Position - anchor.Position).Magnitude + 0.5) or 0
+    label.Text = string.format("%s\nHP: %d/%d  |  %d studs", plr.Name,
+        math.floor(math.max(0, hum.Health) + 0.5),
+        math.floor(math.max(1, hum.MaxHealth) + 0.5), distance)
 end
 
 local function removePlayerESP(char)
     if not char then return end
-
     local hl = char:FindFirstChild("PlayerHighlight")
     if hl then hl:Destroy() end
-
-    local head = char:FindFirstChild("Head")
-    if head then
-        local infoGui = head:FindFirstChild("PlayerInfoESP")
-        if infoGui then infoGui:Destroy() end
+    for _, obj in ipairs(char:GetDescendants()) do
+        if obj:IsA("BillboardGui") and obj.Name == "PlayerInfoESP" then obj:Destroy() end
     end
 end
 
 local function applyPlayerESP(state)
     for _, plr in ipairs(plrs:GetPlayers()) do
-        if plr == lplr then continue end
-        local char = plr.Character
-        if not char then continue end
-
-        if state then
-            addPlayerInfoESP(plr, char)
-        else
-            removePlayerESP(char)
+        if plr ~= lplr then
+            local char = plr.Character
+            if char then
+                if state then addPlayerInfoESP(plr, char) else removePlayerESP(char) end
+            end
         end
     end
 end
 
-plrs.PlayerAdded:Connect(function(plr)
+local function watchPlayer(plr)
     plr.CharacterAdded:Connect(function(char)
         if not toggles.PlayerESP then return end
-        task.wait(0.5)
-        addPlayerInfoESP(plr, char)
+        task.wait(0.25)
+        if toggles.PlayerESP and plr.Character == char then addPlayerInfoESP(plr, char) end
     end)
+end
+for _, plr in ipairs(plrs:GetPlayers()) do
+    if plr ~= lplr then watchPlayer(plr) end
+end
+plrs.PlayerAdded:Connect(function(plr)
+    watchPlayer(plr)
+    if toggles.PlayerESP and plr.Character then addPlayerInfoESP(plr, plr.Character) end
 end)
 
 local lastPlayerESP = false
 local lastEnemyHP = false
 local enemyHPUpdateTimer = 0
+local playerESPUpdateTimer = 0
 
 rs.Heartbeat:Connect(function(dt)
     if toggles.PlayerESP ~= lastPlayerESP then
@@ -794,21 +780,24 @@ rs.Heartbeat:Connect(function(dt)
         applyPlayerESP(toggles.PlayerESP)
     end
 
+    -- Refresh at 10 Hz rather than every frame. This also retries when parts stream in.
     if toggles.PlayerESP then
-        for _, plr in ipairs(plrs:GetPlayers()) do
-            if plr ~= lplr and plr.Character then
-                addPlayerInfoESP(plr, plr.Character)
+        playerESPUpdateTimer += dt
+        if playerESPUpdateTimer >= 0.1 then
+            playerESPUpdateTimer = 0
+            for _, plr in ipairs(plrs:GetPlayers()) do
+                if plr ~= lplr and plr.Character then addPlayerInfoESP(plr, plr.Character) end
             end
         end
+    else
+        playerESPUpdateTimer = 0
     end
 
     if toggles.EnemyHP ~= lastEnemyHP then
         lastEnemyHP = toggles.EnemyHP
         if not toggles.EnemyHP then
             for _, npc in ipairs(ws:GetDescendants()) do
-                if npc:IsA("Model") then
-                    removeEnemyHPESP(npc)
-                end
+                if npc:IsA("Model") then removeEnemyHPESP(npc) end
             end
         end
     end
@@ -820,7 +809,6 @@ rs.Heartbeat:Connect(function(dt)
             updateEnemyHPESP()
         end
     end
-
 end)
 
 -- My HP display
