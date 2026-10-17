@@ -9,6 +9,8 @@ local cg = game:GetService("CoreGui")
 local cam = ws.CurrentCamera
 local lplr = plrs.LocalPlayer
 
+local flySpeed = 55
+
 local toggles = {
     AimAssist = false,
     ESP = false,
@@ -398,6 +400,7 @@ createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStre
 createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
 createSlider("Hitbox Size", 1, 20, hitboxCfg.size.X, function(v) hitboxCfg.size = Vector3.new(v, v, v) end)
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
+createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
 
 -- UI-only keybind selector for showing/hiding this menu.
 -- Persist the selected key using executor file APIs when available.
@@ -1118,7 +1121,7 @@ local flyVelocity = nil
 local flyGyro = nil
 local flyRoot = nil
 local flyConnection = nil
-local flySpeed = 55
+flySpeed = 55
 
 local function stopFly()
     if flyConnection then
