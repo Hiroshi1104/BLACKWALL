@@ -1308,7 +1308,8 @@ local function refreshTargets()
     validTargets = tTargets
 end
 
--- Gather NPCs: cache eligible models and move them at a lower, steady rate to reduce frame spikes.
+-- Gather NPCs: stack eligible NPC roots at one shared point in front of the player.
+-- Performance: scan Workspace infrequently, then reuse a cached list for fast movement updates.
 -- Excludes Armata/MI28 and any Dummy model, including nested Dummy/DummyTwo models.
 local function hasGatherExcludedName(model)
     local name = string.lower(model.Name)
@@ -1325,6 +1326,12 @@ local function isGatherExcluded(model)
             return true
         end
         node = node.Parent
+    end
+    -- Skip wrappers containing excluded models so moving a parent cannot move a boss/Dummy.
+    for _, descendant in ipairs(model:GetDescendants()) do
+        if descendant:IsA("Model") and hasGatherExcludedName(descendant) then
+            return true
+        end
     end
     return false
 end
@@ -1347,72 +1354,57 @@ local function isNestedInsideAnotherHumanoidModel(model)
     return false
 end
 
-local gatherCandidates = {}
-local lastGatherScan = 0
-local GATHER_SCAN_INTERVAL = 1.0
-local GATHER_MOVE_INTERVAL = 0.16
+local gatherCache = {}
+local GATHER_SCAN_INTERVAL = 1.0 -- Workspace scan only once per second
+local GATHER_MOVE_INTERVAL = 0.04 -- update target position about 25 times/sec for quick tracking
 
 task.spawn(function()
+    local scanElapsed = GATHER_SCAN_INTERVAL
+    local moveElapsed = 0
     while true do
-        if toggles.GatherNPCs then
+        local dt = task.wait(0.015)
+        if not toggles.GatherNPCs then
+            table.clear(gatherCache)
+            scanElapsed = GATHER_SCAN_INTERVAL -- rescan immediately when enabled again
+            moveElapsed = 0
+        else
+            scanElapsed += dt
+            moveElapsed += dt
             local character = lplr.Character
             local myRoot = character and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
             if myRoot then
-                -- Rebuild the candidate cache once per second instead of scanning the entire
-                -- Workspace and each model's descendants every 0.08 seconds.
-                if os.clock() - lastGatherScan >= GATHER_SCAN_INTERVAL then
+                if scanElapsed >= GATHER_SCAN_INTERVAL then
+                    scanElapsed = 0
                     local candidates = {}
-                    local excludedModels = {}
-                    local all = ws:GetDescendants()
-                    for _, obj in ipairs(all) do
-                        if obj:IsA("Model") and hasGatherExcludedName(obj) then
-                            excludedModels[obj] = true
-                        end
-                    end
-                    for _, obj in ipairs(all) do
-                        if obj:IsA("Model") and obj ~= character
+                    for _, obj in ipairs(ws:GetDescendants()) do
+                        if obj:IsA("Model")
+                            and obj ~= character
                             and not isNestedInsideAnotherHumanoidModel(obj)
+                            and not isGatherExcluded(obj)
                             and not plrs:GetPlayerFromCharacter(obj) then
-                            local excluded = false
-                            local node = obj
-                            while node and node ~= ws do
-                                if node:IsA("Model") and excludedModels[node] then
-                                    excluded = true
-                                    break
-                                end
-                                node = node.Parent
-                            end
-                            if not excluded then
-                                -- Do not move wrapper models that contain excluded boss/dummy models.
-                                for descendant in pairs(excludedModels) do
-                                    if descendant:IsDescendantOf(obj) then
-                                        excluded = true
-                                        break
-                                    end
-                                end
-                            end
-                            if not excluded then
-                                local hum = obj:FindFirstChildOfClass("Humanoid")
-                                local root = getGatherRoot(obj)
-                                if hum and hum.Health > 0 and root then
-                                    candidates[#candidates + 1] = {model = obj, root = root}
-                                end
+                            local hum = obj:FindFirstChildOfClass("Humanoid")
+                            local root = getGatherRoot(obj)
+                            if hum and hum.Health > 0 and root then
+                                candidates[#candidates + 1] = {model = obj, root = root, humanoid = hum}
                             end
                         end
                     end
-                    gatherCandidates = candidates
-                    lastGatherScan = os.clock()
+                    gatherCache = candidates
                 end
 
-                -- Keep the same shared point in front of the player, but update less often.
-                local forward = myRoot.CFrame.LookVector
-                local targetPos = myRoot.Position + forward * cfg.gatherDistance
-                local targetCFrame = CFrame.lookAt(targetPos, targetPos + forward)
-                for _, entry in ipairs(gatherCandidates) do
-                    local npc, root = entry.model, entry.root
-                    if npc.Parent and root.Parent and not isGatherExcluded(npc) then
-                        local hum = npc:FindFirstChildOfClass("Humanoid")
-                        if hum and hum.Health > 0 then
+                if moveElapsed >= GATHER_MOVE_INTERVAL then
+                    moveElapsed = 0
+                    -- One shared point in front of the player; PivotTo snaps quickly without
+                    -- repeatedly scanning Workspace or checking every descendant per update.
+                    local forward = myRoot.CFrame.LookVector
+                    local targetPos = myRoot.Position + forward * cfg.gatherDistance
+                    local targetCFrame = CFrame.lookAt(targetPos, targetPos + forward)
+                    for i = #gatherCache, 1, -1 do
+                        local entry = gatherCache[i]
+                        local npc, root, hum = entry.model, entry.root, entry.humanoid
+                        if not npc.Parent or not root.Parent or not hum.Parent or hum.Health <= 0 then
+                            table.remove(gatherCache, i)
+                        else
                             pcall(function()
                                 local pivot = npc:GetPivot()
                                 local rootOffset = pivot:ToObjectSpace(root.CFrame)
@@ -1422,11 +1414,6 @@ task.spawn(function()
                     end
                 end
             end
-            task.wait(GATHER_MOVE_INTERVAL)
-        else
-            gatherCandidates = {}
-            lastGatherScan = 0
-            task.wait(0.25)
         end
     end
 end)
