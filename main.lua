@@ -455,7 +455,7 @@ keybindLabel.BackgroundTransparency = 1
 keybindLabel.Position = UDim2.new(0, 12, 0, 0)
 keybindLabel.Size = UDim2.new(1, -105, 1, 0)
 keybindLabel.Font = Enum.Font.GothamMedium
-keybindLabel.Text = "Quickhacks • RightCTRL is Default"
+keybindLabel.Text = "Quickhacks"
 keybindLabel.TextColor3 = C.text
 keybindLabel.TextSize = 12
 keybindLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1308,7 +1308,7 @@ local function refreshTargets()
     validTargets = tTargets
 end
 
--- Gather NPCs: stack eligible NPC roots at one shared point in front of the player.
+-- Gather NPCs: cache eligible models and move them at a lower, steady rate to reduce frame spikes.
 -- Excludes Armata/MI28 and any Dummy model, including nested Dummy/DummyTwo models.
 local function hasGatherExcludedName(model)
     local name = string.lower(model.Name)
@@ -1325,13 +1325,6 @@ local function isGatherExcluded(model)
             return true
         end
         node = node.Parent
-    end
-    -- Also skip wrapper models containing a Dummy/vehicle-boss model, so a parent
-    -- wrapper cannot indirectly move an excluded object.
-    for _, descendant in ipairs(model:GetDescendants()) do
-        if descendant:IsA("Model") and hasGatherExcludedName(descendant) then
-            return true
-        end
     end
     return false
 end
@@ -1354,45 +1347,87 @@ local function isNestedInsideAnotherHumanoidModel(model)
     return false
 end
 
+local gatherCandidates = {}
+local lastGatherScan = 0
+local GATHER_SCAN_INTERVAL = 1.0
+local GATHER_MOVE_INTERVAL = 0.16
+
 task.spawn(function()
     while true do
         if toggles.GatherNPCs then
             local character = lplr.Character
             local myRoot = character and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
             if myRoot then
-                local candidates = {}
-                for _, obj in ipairs(ws:GetDescendants()) do
-                    if obj:IsA("Model")
-                        and obj ~= character
-                        and not isNestedInsideAnotherHumanoidModel(obj)
-                        and not isGatherExcluded(obj)
-                        and not plrs:GetPlayerFromCharacter(obj) then
-                        local hum = obj:FindFirstChildOfClass("Humanoid")
-                        local root = getGatherRoot(obj)
-                        if hum and hum.Health > 0 and root then
-                            candidates[#candidates + 1] = {model = obj, root = root}
+                -- Rebuild the candidate cache once per second instead of scanning the entire
+                -- Workspace and each model's descendants every 0.08 seconds.
+                if os.clock() - lastGatherScan >= GATHER_SCAN_INTERVAL then
+                    local candidates = {}
+                    local excludedModels = {}
+                    local all = ws:GetDescendants()
+                    for _, obj in ipairs(all) do
+                        if obj:IsA("Model") and hasGatherExcludedName(obj) then
+                            excludedModels[obj] = true
                         end
                     end
+                    for _, obj in ipairs(all) do
+                        if obj:IsA("Model") and obj ~= character
+                            and not isNestedInsideAnotherHumanoidModel(obj)
+                            and not plrs:GetPlayerFromCharacter(obj) then
+                            local excluded = false
+                            local node = obj
+                            while node and node ~= ws do
+                                if node:IsA("Model") and excludedModels[node] then
+                                    excluded = true
+                                    break
+                                end
+                                node = node.Parent
+                            end
+                            if not excluded then
+                                -- Do not move wrapper models that contain excluded boss/dummy models.
+                                for descendant in pairs(excludedModels) do
+                                    if descendant:IsDescendantOf(obj) then
+                                        excluded = true
+                                        break
+                                    end
+                                end
+                            end
+                            if not excluded then
+                                local hum = obj:FindFirstChildOfClass("Humanoid")
+                                local root = getGatherRoot(obj)
+                                if hum and hum.Health > 0 and root then
+                                    candidates[#candidates + 1] = {model = obj, root = root}
+                                end
+                            end
+                        end
+                    end
+                    gatherCandidates = candidates
+                    lastGatherScan = os.clock()
                 end
 
-                -- Give every NPC the same root position and facing. Their models overlap
-                -- instead of being arranged in a line or assigned separate offsets.
+                -- Keep the same shared point in front of the player, but update less often.
                 local forward = myRoot.CFrame.LookVector
                 local targetPos = myRoot.Position + forward * cfg.gatherDistance
                 local targetCFrame = CFrame.lookAt(targetPos, targetPos + forward)
-                for _, entry in ipairs(candidates) do
+                for _, entry in ipairs(gatherCandidates) do
                     local npc, root = entry.model, entry.root
                     if npc.Parent and root.Parent and not isGatherExcluded(npc) then
-                        pcall(function()
-                            local pivot = npc:GetPivot()
-                            local rootOffset = pivot:ToObjectSpace(root.CFrame)
-                            npc:PivotTo(targetCFrame * rootOffset:Inverse())
-                        end)
+                        local hum = npc:FindFirstChildOfClass("Humanoid")
+                        if hum and hum.Health > 0 then
+                            pcall(function()
+                                local pivot = npc:GetPivot()
+                                local rootOffset = pivot:ToObjectSpace(root.CFrame)
+                                npc:PivotTo(targetCFrame * rootOffset:Inverse())
+                            end)
+                        end
                     end
                 end
             end
+            task.wait(GATHER_MOVE_INTERVAL)
+        else
+            gatherCandidates = {}
+            lastGatherScan = 0
+            task.wait(0.25)
         end
-        task.wait(0.08)
     end
 end)
 
