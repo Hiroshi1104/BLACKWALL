@@ -157,23 +157,10 @@ subtitle.BackgroundTransparency = 1
 subtitle.Position = UDim2.new(0, 60, 0, 34)
 subtitle.Size = UDim2.new(1, -112, 0, 15)
 subtitle.Font = Enum.Font.Gotham
-subtitle.Text = "Feature panel  •  RightCtrl to hide"
+subtitle.Text = "Feature panel  •  RightCtrl to toggle"
 subtitle.TextColor3 = C.muted
 subtitle.TextSize = 9
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
-
-local minBtn = Instance.new("TextButton")
-minBtn.Parent = header
-minBtn.Position = UDim2.new(1, -42, 0, 15)
-minBtn.Size = UDim2.new(0, 28, 0, 28)
-minBtn.BackgroundColor3 = C.panel2
-minBtn.BorderSizePixel = 0
-minBtn.Font = Enum.Font.GothamBold
-minBtn.Text = "—"
-minBtn.TextColor3 = C.text
-minBtn.TextSize = 15
-minBtn.AutoButtonColor = false
-corner(minBtn, 8)
 
 local scroll = Instance.new("ScrollingFrame")
 scroll.Name = "Scroll"
@@ -200,41 +187,6 @@ local padding = Instance.new("UIPadding")
 padding.Parent = scroll
 padding.PaddingTop = UDim.new(0, 8)
 padding.PaddingBottom = UDim.new(0, 10)
-
-local isMin = false
-local origSize = main.Size
-minBtn.MouseEnter:Connect(function() minBtn.BackgroundColor3 = C.hover end)
-minBtn.MouseLeave:Connect(function() minBtn.BackgroundColor3 = C.panel2 end)
-minBtn.MouseButton1Click:Connect(function()
-    isMin = not isMin
-    if isMin then
-        origSize = main.Size
-        scroll.Visible = false
-        header.Visible = false
-        topAccent.Visible = false
-        -- The size constraint otherwise forces the minimized window to stay 280x320.
-        sizeConstraint.Enabled = false
-        main.ClipsDescendants = false
-        main.Size = UDim2.new(0, 48, 0, 48)
-        minBtn.Parent = main
-        minBtn.Position = UDim2.new(0, 10, 0, 10)
-        minBtn.Size = UDim2.new(0, 28, 0, 28)
-        minBtn.Text = "+"
-        minBtn.BackgroundColor3 = C.accentDark
-    else
-        main.Size = origSize
-        sizeConstraint.Enabled = true
-        scroll.Visible = true
-        header.Visible = true
-        topAccent.Visible = true
-        main.ClipsDescendants = true
-        minBtn.Parent = header
-        minBtn.Position = UDim2.new(1, -42, 0, 15)
-        minBtn.Size = UDim2.new(0, 28, 0, 28)
-        minBtn.Text = "—"
-        minBtn.BackgroundColor3 = C.panel2
-    end
-end)
 
 local function createSection(name)
     local wrap = Instance.new("Frame")
@@ -445,6 +397,51 @@ createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
 createSlider("Hitbox Size", 1, 20, hitboxCfg.size.X, function(v) hitboxCfg.size = Vector3.new(v, v, v) end)
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 
+-- UI-only keybind selector for showing/hiding this menu.
+local menuToggleKey = Enum.KeyCode.RightControl
+local waitingForMenuKey = false
+local keybindButton = Instance.new("TextButton")
+keybindButton.Name = "MenuToggleKeybind"
+keybindButton.Parent = scroll
+keybindButton.Size = UDim2.new(1, -24, 0, 38)
+keybindButton.BackgroundColor3 = C.panel
+keybindButton.BorderSizePixel = 0
+keybindButton.AutoButtonColor = false
+keybindButton.Font = Enum.Font.GothamMedium
+keybindButton.Text = ""
+keybindButton.ZIndex = 7
+corner(keybindButton, 8)
+local keybindEdge = stroke(keybindButton, C.hover, 0.45, 1)
+local keybindLabel = Instance.new("TextLabel")
+keybindLabel.Parent = keybindButton
+keybindLabel.BackgroundTransparency = 1
+keybindLabel.Position = UDim2.new(0, 12, 0, 0)
+keybindLabel.Size = UDim2.new(1, -105, 1, 0)
+keybindLabel.Font = Enum.Font.GothamMedium
+keybindLabel.Text = "Menu Toggle Key"
+keybindLabel.TextColor3 = C.text
+keybindLabel.TextSize = 12
+keybindLabel.TextXAlignment = Enum.TextXAlignment.Left
+local keybindValue = Instance.new("TextLabel")
+keybindValue.Parent = keybindButton
+keybindValue.BackgroundColor3 = C.panel2
+keybindValue.Position = UDim2.new(1, -91, 0.5, -12)
+keybindValue.Size = UDim2.new(0, 79, 0, 24)
+keybindValue.Font = Enum.Font.GothamBold
+keybindValue.Text = menuToggleKey.Name
+keybindValue.TextColor3 = C.text
+keybindValue.TextSize = 10
+keybindValue.TextTruncate = Enum.TextTruncate.AtEnd
+corner(keybindValue, 6)
+keybindButton.MouseButton1Click:Connect(function()
+    waitingForMenuKey = true
+    keybindValue.Text = "Press key..."
+    keybindEdge.Color = C.accent
+    keybindEdge.Transparency = 0
+end)
+keybindButton.MouseEnter:Connect(function() keybindButton.BackgroundColor3 = C.panel2 end)
+keybindButton.MouseLeave:Connect(function() keybindButton.BackgroundColor3 = C.panel end)
+
 createSection("Optimization")
 createToggle("Low Visuals", "LowVisuals")
 createToggle("Instance Optimizer", "InstanceOptimizer")
@@ -459,7 +456,26 @@ task.defer(function()
 end)
 
 uis.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
+    if waitingForMenuKey then
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            if input.KeyCode == Enum.KeyCode.Escape then
+                waitingForMenuKey = false
+                keybindValue.Text = menuToggleKey.Name
+                keybindEdge.Color = C.hover
+                keybindEdge.Transparency = 0.45
+                return
+            end
+            if input.KeyCode ~= Enum.KeyCode.Unknown then
+                menuToggleKey = input.KeyCode
+                waitingForMenuKey = false
+                keybindValue.Text = menuToggleKey.Name
+                keybindEdge.Color = C.hover
+                keybindEdge.Transparency = 0.45
+            end
+        end
+        return
+    end
+    if not gpe and input.KeyCode == menuToggleKey then
         main.Visible = not main.Visible
     end
 end)
