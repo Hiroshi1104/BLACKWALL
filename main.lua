@@ -64,18 +64,19 @@ local oldGui = cg:FindFirstChild("OmniMenu")
 if oldGui then oldGui:Destroy() end
 
 local C = {
-    -- BLACKWALL / Cyberpunk 2077-inspired settings palette
-    bg = Color3.fromRGB(24, 24, 27),
-    panel = Color3.fromRGB(34, 34, 38),
-    panel2 = Color3.fromRGB(48, 48, 54),
-    hover = Color3.fromRGB(72, 72, 80),
-    accent = Color3.fromRGB(0, 190, 210), -- cyan = enabled / active
-    accentDark = Color3.fromRGB(255, 65, 75), -- red = outline / warning
-    outline = Color3.fromRGB(66, 66, 74),
-    text = Color3.fromRGB(235, 235, 240),
-    muted = Color3.fromRGB(160, 160, 170),
-    off = Color3.fromRGB(100, 55, 60), -- muted red = disabled
-    green = Color3.fromRGB(0, 190, 210),
+    -- BLACKWALL palette: pitch-black surfaces, red UI accents, cyan TRUE, red FALSE
+    bg = Color3.fromRGB(0, 0, 0),
+    panel = Color3.fromRGB(7, 7, 8),
+    panel2 = Color3.fromRGB(18, 5, 7),
+    hover = Color3.fromRGB(42, 8, 12),
+    accent = Color3.fromRGB(220, 24, 42), -- red = general UI accents
+    accentDark = Color3.fromRGB(150, 10, 24),
+    trueState = Color3.fromRGB(0, 220, 235), -- cyan = TRUE / enabled
+    outline = Color3.fromRGB(125, 16, 28),
+    text = Color3.fromRGB(242, 242, 245),
+    muted = Color3.fromRGB(155, 135, 138),
+    off = Color3.fromRGB(220, 24, 42), -- red = FALSE / disabled
+    green = Color3.fromRGB(0, 220, 235),
 }
 
 local function corner(parent, radius)
@@ -315,12 +316,13 @@ local function createToggle(name, key)
     corner(dot, 7)
     local function paint()
         local on = toggles[key]
-        pill.BackgroundColor3 = on and C.accent or C.off
+        pill.BackgroundColor3 = on and C.trueState or C.off
         dot.Position = on and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
         dot.BackgroundColor3 = on and C.bg or Color3.fromRGB(255, 245, 245)
         b.BackgroundColor3 = C.panel
         edge.Color = C.outline
-        edge.Transparency = on and 0.05 or 0.25
+        edge.Color = on and C.trueState or C.outline
+        edge.Transparency = on and 0.05 or 0.12
     end
     paint()
     b.MouseEnter:Connect(function() if not toggles[key] then b.BackgroundColor3 = C.panel2 end end)
