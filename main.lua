@@ -65,22 +65,22 @@ if oldGui then oldGui:Destroy() end
 
 local C = {
     -- BLACKWALL / Cyberpunk 2077-inspired settings palette
-    bg = Color3.fromRGB(2, 3, 6),
-    panel = Color3.fromRGB(7, 8, 12),
-    panel2 = Color3.fromRGB(14, 17, 22),
-    hover = Color3.fromRGB(255, 35, 58),
-    accent = Color3.fromRGB(0, 238, 255), -- cyan = enabled / active
-    accentDark = Color3.fromRGB(255, 35, 58), -- red = outline / warning
-    outline = Color3.fromRGB(255, 35, 58),
-    text = Color3.fromRGB(230, 250, 255),
-    muted = Color3.fromRGB(125, 153, 164),
-    off = Color3.fromRGB(255, 35, 58), -- red = disabled
-    green = Color3.fromRGB(0, 238, 255),
+    bg = Color3.fromRGB(24, 24, 27),
+    panel = Color3.fromRGB(34, 34, 38),
+    panel2 = Color3.fromRGB(48, 48, 54),
+    hover = Color3.fromRGB(72, 72, 80),
+    accent = Color3.fromRGB(0, 190, 210), -- cyan = enabled / active
+    accentDark = Color3.fromRGB(255, 65, 75), -- red = outline / warning
+    outline = Color3.fromRGB(66, 66, 74),
+    text = Color3.fromRGB(235, 235, 240),
+    muted = Color3.fromRGB(160, 160, 170),
+    off = Color3.fromRGB(100, 55, 60), -- muted red = disabled
+    green = Color3.fromRGB(0, 190, 210),
 }
 
 local function corner(parent, radius)
     local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius or 8)
+    c.CornerRadius = UDim.new(0, radius or 2)
     c.Parent = parent
     return c
 end
@@ -107,21 +107,21 @@ main.Name = "main"
 main.Parent = gui
 main.BackgroundColor3 = C.bg
 main.BorderSizePixel = 0
-main.Position = UDim2.new(0.035, 0, 0.17, 0)
-main.Size = UDim2.new(0, 310, 0, 480)
+main.Position = UDim2.new(0.035, 0, 0.12, 0)
+main.Size = UDim2.new(0, 390, 0, 560)
 main.Active = true
 main.Draggable = true
 main.ClipsDescendants = true
-corner(main, 3)
-stroke(main, C.outline, 0.05, 1.5)
+corner(main, 2)
+stroke(main, C.outline, 0.05, 1)
 local sizeConstraint = Instance.new("UISizeConstraint")
 sizeConstraint.Parent = main
-sizeConstraint.MinSize = Vector2.new(280, 320)
-sizeConstraint.MaxSize = Vector2.new(390, 680)
+sizeConstraint.MinSize = Vector2.new(320, 360)
+sizeConstraint.MaxSize = Vector2.new(460, 760)
 
 local topAccent = Instance.new("Frame")
 topAccent.Parent = main
-topAccent.Size = UDim2.new(1, 0, 0, 3)
+topAccent.Size = UDim2.new(1, 0, 0, 2)
 topAccent.BackgroundColor3 = C.outline
 topAccent.BorderSizePixel = 0
 
@@ -130,13 +130,13 @@ header.Parent = main
 header.BackgroundColor3 = C.panel
 header.BorderSizePixel = 0
 header.Position = UDim2.new(0, 0, 0, 3)
-header.Size = UDim2.new(1, 0, 0, 62)
+header.Size = UDim2.new(1, 0, 0, 58)
 
 local logo = Instance.new("Frame")
 logo.Parent = header
-logo.Position = UDim2.new(0, 14, 0, 13)
-logo.Size = UDim2.new(0, 35, 0, 35)
-logo.BackgroundColor3 = C.outline
+logo.Position = UDim2.new(0, 12, 0, 12)
+logo.Size = UDim2.new(0, 32, 0, 32)
+logo.BackgroundColor3 = C.accent
 logo.BorderSizePixel = 0
 corner(logo, 2)
 local logoText = Instance.new("TextLabel")
@@ -151,59 +151,114 @@ logoText.TextSize = 19
 local title = Instance.new("TextLabel")
 title.Parent = header
 title.BackgroundTransparency = 1
-title.Position = UDim2.new(0, 59, 0, 12)
-title.Size = UDim2.new(1, -112, 0, 22)
-title.Font = Enum.Font.GothamBold
+title.Position = UDim2.new(0, 54, 0, 10)
+title.Size = UDim2.new(1, -70, 0, 22)
+title.Font = Enum.Font.Code
 title.Text = "BLACKWALL  //  MAIN SYSTEM"
 title.TextColor3 = C.text
-title.TextSize = 14
+title.TextSize = 16
 title.TextXAlignment = Enum.TextXAlignment.Left
 local subtitle = Instance.new("TextLabel")
 subtitle.Parent = header
 subtitle.BackgroundTransparency = 1
-subtitle.Position = UDim2.new(0, 60, 0, 34)
-subtitle.Size = UDim2.new(1, -112, 0, 15)
-subtitle.Font = Enum.Font.Gotham
+subtitle.Position = UDim2.new(0, 54, 0, 33)
+subtitle.Size = UDim2.new(1, -70, 0, 14)
+subtitle.Font = Enum.Font.Code
 subtitle.Text = "UNAUTHORIZED ACCESS  •  RightCTRL Default"
 subtitle.TextColor3 = C.muted
 subtitle.TextSize = 9
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
 
-local scroll = Instance.new("ScrollingFrame")
-scroll.Name = "Scroll"
-scroll.Parent = main
-scroll.BackgroundTransparency = 1
-scroll.BorderSizePixel = 0
-scroll.Position = UDim2.new(0, 0, 0, 73)
-scroll.Size = UDim2.new(1, 0, 1, -81)
-scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-scroll.ScrollBarThickness = 4
-scroll.ScrollBarImageColor3 = C.accent
-scroll.ScrollBarImageTransparency = 0.15
-scroll.ScrollingEnabled = true
-scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scroll.ZIndex = 5
+-- Category tabs: each page keeps the existing BLACKWALL colors and controls.
+local tabBar = Instance.new("Frame")
+tabBar.Name = "CategoryTabs"
+tabBar.Parent = main
+tabBar.BackgroundColor3 = C.bg
+tabBar.BorderSizePixel = 0
+tabBar.Position = UDim2.new(0, 8, 0, 65)
+tabBar.Size = UDim2.new(1, -16, 0, 32)
+tabBar.ZIndex = 8
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.Parent = tabBar
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+tabLayout.Padding = UDim.new(0, 5)
+tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 
-local layout = Instance.new("UIListLayout")
-layout.Parent = scroll
-layout.Padding = UDim.new(0, 7)
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.FillDirection = Enum.FillDirection.Vertical
-local padding = Instance.new("UIPadding")
-padding.Parent = scroll
-padding.PaddingTop = UDim.new(0, 8)
-padding.PaddingBottom = UDim.new(0, 10)
+local tabPages = {}
+local tabButtons = {}
+local activeTab = "Main"
+local scroll, layout
+local function setTab(name)
+    activeTab = name
+    for tabName, page in pairs(tabPages) do
+        page.Visible = (tabName == name)
+    end
+    for tabName, button in pairs(tabButtons) do
+        local selected = tabName == name
+        button.BackgroundColor3 = selected and C.panel2 or C.panel
+        button.TextColor3 = selected and C.accent or C.muted
+    end
+    scroll = tabPages[name]
+    layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
+end
+
+for order, name in ipairs({"Main", "Movement", "Settings"}) do
+    local page = Instance.new("ScrollingFrame")
+    page.Name = name .. "Page"
+    page.Parent = main
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.Position = UDim2.new(0, 0, 0, 103)
+    page.Size = UDim2.new(1, 0, 1, -109)
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.ScrollBarThickness = 5
+    page.ScrollBarImageColor3 = C.accent
+    page.ScrollBarImageTransparency = 0.15
+    page.ScrollingEnabled = true
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    page.Visible = false
+    page.ZIndex = 5
+    local pageLayout = Instance.new("UIListLayout")
+    pageLayout.Parent = page
+    pageLayout.Padding = UDim.new(0, 4)
+    pageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    local pagePadding = Instance.new("UIPadding")
+    pagePadding.Parent = page
+    pagePadding.PaddingTop = UDim.new(0, 6)
+    pagePadding.PaddingBottom = UDim.new(0, 8)
+
+    local button = Instance.new("TextButton")
+    button.Name = name .. "Tab"
+    button.Parent = tabBar
+    button.LayoutOrder = order
+    button.Size = UDim2.new(0, 112, 1, 0)
+    button.BackgroundColor3 = C.panel
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = false
+    button.Font = Enum.Font.Code
+    button.Text = string.upper(name)
+    button.TextSize = 12
+    button.TextColor3 = C.muted
+    button.ZIndex = 9
+    corner(button, 2)
+    stroke(button, C.outline, 0.25, 1)
+    button.MouseButton1Click:Connect(function() setTab(name) end)
+    tabPages[name] = page
+    tabButtons[name] = button
+end
+setTab("Main")
 
 local function createSection(name)
     local wrap = Instance.new("Frame")
     wrap.Parent = scroll
     wrap.BackgroundTransparency = 1
-    wrap.Size = UDim2.new(1, -24, 0, 27)
+    wrap.Size = UDim2.new(1, -20, 0, 24)
     wrap.BorderSizePixel = 0
     local line = Instance.new("Frame")
     line.Parent = wrap
-    line.BackgroundColor3 = C.outline
+    line.BackgroundColor3 = C.accent
     line.BorderSizePixel = 0
     line.Position = UDim2.new(0, 1, 0, 7)
     line.Size = UDim2.new(0, 3, 0, 13)
@@ -213,10 +268,10 @@ local function createSection(name)
     lbl.BackgroundTransparency = 1
     lbl.Position = UDim2.new(0, 11, 0, 0)
     lbl.Size = UDim2.new(1, -11, 1, 0)
-    lbl.Font = Enum.Font.GothamBold
+    lbl.Font = Enum.Font.Code
     lbl.Text = string.upper(name)
     lbl.TextColor3 = C.muted
-    lbl.TextSize = 10
+    lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
 end
 
@@ -224,7 +279,7 @@ local function createToggle(name, key)
     local b = Instance.new("TextButton")
     b.Parent = scroll
     b.BackgroundColor3 = C.panel
-    b.Size = UDim2.new(1, -24, 0, 38)
+    b.Size = UDim2.new(1, -20, 0, 34)
     b.Font = Enum.Font.GothamMedium
     b.Text = ""
     b.TextColor3 = C.text
@@ -233,35 +288,35 @@ local function createToggle(name, key)
     b.ZIndex = 7
     b.AutoButtonColor = false
     corner(b, 2)
-    local edge = stroke(b, C.hover, 0.45, 1)
+    local edge = stroke(b, C.outline, 0.2, 1)
     local label = Instance.new("TextLabel")
     label.Parent = b
     label.BackgroundTransparency = 1
     label.Position = UDim2.new(0, 12, 0, 0)
     label.Size = UDim2.new(1, -72, 1, 0)
-    label.Font = Enum.Font.GothamMedium
+    label.Font = Enum.Font.Code
     label.Text = name
     label.TextColor3 = C.text
-    label.TextSize = 12
+    label.TextSize = 13
     label.TextXAlignment = Enum.TextXAlignment.Left
     local pill = Instance.new("Frame")
     pill.Parent = b
     pill.AnchorPoint = Vector2.new(1, 0.5)
     pill.Position = UDim2.new(1, -10, 0.5, 0)
-    pill.Size = UDim2.new(0, 42, 0, 22)
+    pill.Size = UDim2.new(0, 36, 0, 18)
     pill.BorderSizePixel = 0
     corner(pill, 11)
     local dot = Instance.new("Frame")
     dot.Parent = pill
-    dot.Size = UDim2.new(0, 14, 0, 14)
-    dot.Position = UDim2.new(0, 4, 0.5, -7)
+    dot.Size = UDim2.new(0, 12, 0, 12)
+    dot.Position = UDim2.new(0, 3, 0.5, -6)
     dot.BorderSizePixel = 0
     dot.BackgroundColor3 = C.text
     corner(dot, 7)
     local function paint()
         local on = toggles[key]
         pill.BackgroundColor3 = on and C.accent or C.off
-        dot.Position = on and UDim2.new(1, -18, 0.5, -7) or UDim2.new(0, 4, 0.5, -7)
+        dot.Position = on and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
         dot.BackgroundColor3 = on and C.bg or Color3.fromRGB(255, 245, 245)
         b.BackgroundColor3 = C.panel
         edge.Color = C.outline
@@ -286,21 +341,21 @@ local function createSlider(name, minV, maxV, def, cb)
     local container = Instance.new("Frame")
     container.Parent = scroll
     container.BackgroundColor3 = C.panel
-    container.Size = UDim2.new(1, -24, 0, 65)
+    container.Size = UDim2.new(1, -20, 0, 60)
     container.BorderSizePixel = 0
     container.ZIndex = 6
     corner(container, 2)
-    stroke(container, C.outline, 0.35, 1)
+    stroke(container, C.outline, 0.15, 1)
 
     local lbl = Instance.new("TextLabel")
     lbl.Parent = container
     lbl.BackgroundTransparency = 1
     lbl.Position = UDim2.new(0, 12, 0, 7)
     lbl.Size = UDim2.new(1, -88, 0, 19)
-    lbl.Font = Enum.Font.GothamMedium
+    lbl.Font = Enum.Font.Code
     lbl.Text = name
     lbl.TextColor3 = C.text
-    lbl.TextSize = 11
+    lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.ZIndex = 7
 
@@ -308,10 +363,10 @@ local function createSlider(name, minV, maxV, def, cb)
     valueBox.Parent = container
     valueBox.AnchorPoint = Vector2.new(1, 0)
     valueBox.Position = UDim2.new(1, -11, 0, 7)
-    valueBox.Size = UDim2.new(0, 66, 0, 19)
+    valueBox.Size = UDim2.new(0, 62, 0, 18)
     valueBox.BackgroundColor3 = C.panel2
     valueBox.BorderSizePixel = 0
-    valueBox.Font = Enum.Font.GothamBold
+    valueBox.Font = Enum.Font.Code
     valueBox.TextColor3 = C.accent
     valueBox.TextSize = 11
     valueBox.Text = tostring(def)
@@ -323,8 +378,8 @@ local function createSlider(name, minV, maxV, def, cb)
     back.AutoButtonColor = false
     back.Text = ""
     back.BackgroundColor3 = C.off
-    back.Position = UDim2.new(0, 12, 0, 39)
-    back.Size = UDim2.new(1, -24, 0, 7)
+    back.Position = UDim2.new(0, 12, 0, 36)
+    back.Size = UDim2.new(1, -24, 0, 6)
     back.BorderSizePixel = 0
     back.ZIndex = 7
     corner(back, 4)
@@ -341,7 +396,7 @@ local function createSlider(name, minV, maxV, def, cb)
     thumb.Parent = back
     thumb.AnchorPoint = Vector2.new(0.5, 0.5)
     thumb.Position = UDim2.new(math.clamp((def - minV) / (maxV - minV), 0, 1), 0, 0.5, 0)
-    thumb.Size = UDim2.new(0, 15, 0, 15)
+    thumb.Size = UDim2.new(0, 12, 0, 12)
     thumb.BackgroundColor3 = C.text
     thumb.BorderSizePixel = 0
     thumb.ZIndex = 9
@@ -383,32 +438,39 @@ local function createSlider(name, minV, maxV, def, cb)
     end)
 end
 
--- Existing controls and callbacks are preserved; only their presentation changed.
-createSection("General")
+-- Main: ESP, targeting, hitboxes, and other visual/utility controls.
+setTab("Main")
+createSection("[ VISUALS & UTILITY ]")
 createToggle("Aim Assist", "AimAssist")
 createToggle("NPC ESP", "ESP")
 createToggle("Enemy HP", "EnemyHP")
 createToggle("Player ESP", "PlayerESP")
 createToggle("My HP", "SelfHP")
-createToggle("Noclip", "Noclip")
-createToggle("Fly", "Fly")
 createToggle("Item ESP", "ItemESP")
 createToggle("Crosshair", "Crosshair")
 createToggle("Big Hitboxes", "Hitboxes")
 createToggle("Fullbright", "Fullbright")
 createToggle("Instant Interact", "InstantInteract")
 createToggle("Del Corpses", "DelCorpses")
-createToggle("Speed Modifier", "Speed")
 createToggle("Gather NPCs", "GatherNPCs")
-
-createSection("Settings")
+createSection("[ AIM / HITBOX SETTINGS ]")
 createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end)
 createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
 createSlider("Hitbox Size", 1, 20, hitboxCfg.size.X, function(v) hitboxCfg.size = Vector3.new(v, v, v) end)
-createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
-createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
 createSlider("Gather Distance", 1, 30, cfg.gatherDistance, function(v) cfg.gatherDistance = v end)
 
+-- Movement: movement toggles and speed controls.
+setTab("Movement")
+createSection("[ MOVEMENT ]")
+createToggle("Noclip", "Noclip")
+createToggle("Fly", "Fly")
+createToggle("Speed Modifier", "Speed")
+createSection("[ MOVEMENT SETTINGS ]")
+createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
+createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
+
+-- Settings: menu keybind and performance controls.
+setTab("Settings")
 -- UI-only keybind selector for showing/hiding this menu.
 -- Persist the selected key using executor file APIs when available.
 local menuKeyFile = "HRSH_MenuToggleKey.txt"
@@ -440,7 +502,7 @@ local waitingForMenuKey = false
 local keybindButton = Instance.new("TextButton")
 keybindButton.Name = "MenuToggleKeybind"
 keybindButton.Parent = scroll
-keybindButton.Size = UDim2.new(1, -24, 0, 38)
+keybindButton.Size = UDim2.new(1, -20, 0, 34)
 keybindButton.BackgroundColor3 = C.panel
 keybindButton.BorderSizePixel = 0
 keybindButton.AutoButtonColor = false
@@ -454,22 +516,22 @@ keybindLabel.Parent = keybindButton
 keybindLabel.BackgroundTransparency = 1
 keybindLabel.Position = UDim2.new(0, 12, 0, 0)
 keybindLabel.Size = UDim2.new(1, -105, 1, 0)
-keybindLabel.Font = Enum.Font.GothamMedium
+keybindLabel.Font = Enum.Font.Code
 keybindLabel.Text = "Quickhacks"
 keybindLabel.TextColor3 = C.text
-keybindLabel.TextSize = 12
+keybindLabel.TextSize = 13
 keybindLabel.TextXAlignment = Enum.TextXAlignment.Left
 local keybindValue = Instance.new("TextLabel")
 keybindValue.Parent = keybindButton
 keybindValue.BackgroundColor3 = C.panel2
 keybindValue.Position = UDim2.new(1, -91, 0.5, -12)
-keybindValue.Size = UDim2.new(0, 79, 0, 24)
-keybindValue.Font = Enum.Font.GothamBold
+keybindValue.Size = UDim2.new(0, 79, 0, 22)
+keybindValue.Font = Enum.Font.Code
 keybindValue.Text = menuToggleKey.Name
 keybindValue.TextColor3 = C.text
 keybindValue.TextSize = 10
 keybindValue.TextTruncate = Enum.TextTruncate.AtEnd
-corner(keybindValue, 6)
+corner(keybindValue, 2)
 keybindButton.MouseButton1Click:Connect(function()
     waitingForMenuKey = true
     keybindValue.Text = "Press key..."
@@ -479,18 +541,12 @@ end)
 keybindButton.MouseEnter:Connect(function() keybindButton.BackgroundColor3 = C.panel2 end)
 keybindButton.MouseLeave:Connect(function() keybindButton.BackgroundColor3 = C.panel end)
 
-createSection("Optimization")
+createSection("[ PERFORMANCE ]")
 createToggle("Low Visuals", "LowVisuals")
 createToggle("Instance Optimizer", "InstanceOptimizer")
 createToggle("Particle Cap", "ParticleCap")
 createToggle("Ultra Potato", "UltraPotato")
-
-layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 24)
-end)
-task.defer(function()
-    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 24)
-end)
+setTab("Main")
 
 uis.InputBegan:Connect(function(input, gpe)
     if waitingForMenuKey then
