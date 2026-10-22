@@ -9,6 +9,120 @@ local cg = game:GetService("CoreGui")
 local cam = ws.CurrentCamera
 local lplr = plrs.LocalPlayer
 
+-- BLACKWALL local password gate.
+-- Change ACCESS_PASSWORD before using. This is a casual-use lock, not server-grade security:
+-- anyone who can inspect this source can discover the password.
+local ACCESS_PASSWORD = "CHANGE_ME_123"
+
+local function requireAccessPassword()
+    local gateGui = Instance.new("ScreenGui")
+    gateGui.Name = "BLACKWALL_AccessGate"
+    gateGui.ResetOnSpawn = false
+    gateGui.IgnoreGuiInset = true
+    gateGui.DisplayOrder = 1000000
+    gateGui.Parent = cg
+
+    local frame = Instance.new("Frame")
+    frame.Name = "Gate"
+    frame.Size = UDim2.fromOffset(340, 190)
+    frame.Position = UDim2.new(0.5, -170, 0.5, -95)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BorderSizePixel = 0
+    frame.Parent = gateGui
+    local border = Instance.new("UIStroke")
+    border.Color = Color3.fromRGB(220, 24, 42)
+    border.Thickness = 1
+    border.Parent = frame
+
+    local title = Instance.new("TextLabel")
+    title.BackgroundTransparency = 1
+    title.Position = UDim2.fromOffset(16, 12)
+    title.Size = UDim2.new(1, -32, 0, 26)
+    title.Font = Enum.Font.Code
+    title.Text = "☣ BLACKWALL // ACCESS"
+    title.TextColor3 = Color3.fromRGB(220, 24, 42)
+    title.TextSize = 17
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+
+    local hint = Instance.new("TextLabel")
+    hint.BackgroundTransparency = 1
+    hint.Position = UDim2.fromOffset(16, 43)
+    hint.Size = UDim2.new(1, -32, 0, 20)
+    hint.Font = Enum.Font.Code
+    hint.Text = "ENTER ACCESS PASSWORD"
+    hint.TextColor3 = Color3.fromRGB(155, 135, 138)
+    hint.TextSize = 11
+    hint.TextXAlignment = Enum.TextXAlignment.Left
+    hint.Parent = frame
+
+    local input = Instance.new("TextBox")
+    input.Position = UDim2.fromOffset(16, 70)
+    input.Size = UDim2.new(1, -32, 0, 34)
+    input.BackgroundColor3 = Color3.fromRGB(7, 7, 8)
+    input.BorderSizePixel = 0
+    input.ClearTextOnFocus = false
+    input.Font = Enum.Font.Code
+    input.PlaceholderText = "Password..."
+    input.Text = ""
+    input.TextColor3 = Color3.fromRGB(0, 220, 235)
+    input.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+    input.TextSize = 14
+    input.Parent = frame
+    local inputStroke = Instance.new("UIStroke")
+    inputStroke.Color = Color3.fromRGB(125, 16, 28)
+    inputStroke.Parent = input
+
+    local status = Instance.new("TextLabel")
+    status.BackgroundTransparency = 1
+    status.Position = UDim2.fromOffset(16, 109)
+    status.Size = UDim2.new(1, -32, 0, 18)
+    status.Font = Enum.Font.Code
+    status.Text = ""
+    status.TextColor3 = Color3.fromRGB(220, 24, 42)
+    status.TextSize = 11
+    status.TextXAlignment = Enum.TextXAlignment.Left
+    status.Parent = frame
+
+    local unlock = Instance.new("TextButton")
+    unlock.Position = UDim2.fromOffset(16, 139)
+    unlock.Size = UDim2.new(1, -32, 0, 34)
+    unlock.BackgroundColor3 = Color3.fromRGB(18, 5, 7)
+    unlock.BorderSizePixel = 0
+    unlock.Font = Enum.Font.Code
+    unlock.Text = "UNLOCK"
+    unlock.TextColor3 = Color3.fromRGB(0, 220, 235)
+    unlock.TextSize = 13
+    unlock.Parent = frame
+    local unlockStroke = Instance.new("UIStroke")
+    unlockStroke.Color = Color3.fromRGB(220, 24, 42)
+    unlockStroke.Parent = unlock
+
+    local finished, granted = false, false
+    local function attempt()
+        if input.Text == ACCESS_PASSWORD then
+            granted = true
+            finished = true
+            status.TextColor3 = Color3.fromRGB(0, 220, 235)
+            status.Text = "ACCESS GRANTED"
+        else
+            input.Text = ""
+            status.Text = "ACCESS DENIED"
+            input:CaptureFocus()
+        end
+    end
+    unlock.Activated:Connect(attempt)
+    input.FocusLost:Connect(function(enterPressed)
+        if enterPressed then attempt() end
+    end)
+    input:CaptureFocus()
+    repeat task.wait() until finished
+    gateGui:Destroy()
+    return granted
+end
+
+if not requireAccessPassword() then return end
+
 local flySpeed = 55
 
 local toggles = {
@@ -204,7 +318,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Movement", "Settings"}) do
+for order, name in ipairs({"Main", "Movement", "Gun", "Settings"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -274,6 +388,73 @@ local function createSection(name)
     lbl.TextColor3 = C.muted
     lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
+end
+
+local function createActionButton(name, callback)
+    local b = Instance.new("TextButton")
+    b.Parent = scroll
+    b.BackgroundColor3 = C.panel
+    b.Size = UDim2.new(1, -20, 0, 36)
+    b.Font = Enum.Font.Code
+    b.Text = name
+    b.TextColor3 = C.text
+    b.TextSize = 12
+    b.BorderSizePixel = 0
+    b.ZIndex = 7
+    b.AutoButtonColor = false
+    corner(b, 2)
+    local edge = stroke(b, C.outline, 0.12, 1)
+    b.MouseEnter:Connect(function()
+        b.BackgroundColor3 = C.panel2
+        edge.Color = C.accent
+    end)
+    b.MouseLeave:Connect(function()
+        b.BackgroundColor3 = C.panel
+        edge.Color = C.outline
+    end)
+    b.MouseButton1Click:Connect(function()
+        local ok, message = pcall(callback)
+        b.Text = ok and (name .. "  [DONE]") or (name .. "  [ERROR]")
+        if not ok then warn("[BLACKWALL] " .. tostring(message)) end
+        task.delay(1.5, function()
+            if b and b.Parent then b.Text = name end
+        end)
+    end)
+    return b
+end
+
+local function getPlayerTools()
+    local found, seen = {}, {}
+    local function scan(container)
+        if not container then return end
+        for _, item in ipairs(container:GetChildren()) do
+            if item:IsA("Tool") and not seen[item] then
+                seen[item] = true
+                table.insert(found, item)
+            end
+        end
+    end
+    scan(lplr:FindFirstChildOfClass("Backpack"))
+    scan(lplr.Character)
+    return found
+end
+
+local function setAmmoAttribute(attributeName, requestedValue)
+    local tools = getPlayerTools()
+    if #tools == 0 then error("No weapons/tools found in Backpack or Character") end
+    local applied, failed = 0, 0
+    for _, tool in ipairs(tools) do
+        local ok = pcall(function()
+            tool:SetAttribute(attributeName, requestedValue)
+        end)
+        if ok then
+            applied += 1
+        else
+            failed += 1
+        end
+    end
+    if applied == 0 then error("Could not set the ammo attribute") end
+    return applied, failed
 end
 
 local function createToggle(name, key)
@@ -470,6 +651,46 @@ createToggle("Speed Modifier", "Speed")
 createSection("[ MOVEMENT SETTINGS ]")
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
+
+-- Gun: one-shot ammo attribute actions for tools currently in Backpack/Character.
+-- math.huge is attempted first; if Roblox rejects non-finite attribute values,
+-- fall back to a very large finite number.
+setTab("Gun")
+createSection("[ AMMO ]")
+createActionButton("Infinite Ammo In Gun", function()
+    local value = math.huge
+    local ok = pcall(function()
+        local tools = getPlayerTools()
+        if #tools == 0 then error("No weapons/tools found") end
+        local applied = 0
+        for _, tool in ipairs(tools) do
+            local setOk = pcall(function() tool:SetAttribute("ACSClientAmmoInGun", value) end)
+            if not setOk then
+                tool:SetAttribute("ACSClientAmmoInGun", 9e15)
+            end
+            applied += 1
+        end
+        if applied == 0 then error("No ammo attributes applied") end
+    end)
+    if not ok then
+        setAmmoAttribute("ACSClientAmmoInGun", 9e15)
+    end
+end)
+createActionButton("Infinite Reserve Ammo", function()
+    local tools = getPlayerTools()
+    if #tools == 0 then error("No weapons/tools found") end
+    local applied = 0
+    for _, tool in ipairs(tools) do
+        local ok = pcall(function() tool:SetAttribute("ACSClientStoredAmmo", math.huge) end)
+        if not ok then
+            tool:SetAttribute("ACSClientStoredAmmo", 9e15)
+        end
+        applied += 1
+    end
+    if applied == 0 then error("No reserve ammo attributes applied") end
+end)
+createSection("[ NOTES ]")
+createSection("Applies once to tools in Backpack and Character")
 
 -- Settings: menu keybind and performance controls.
 setTab("Settings")
