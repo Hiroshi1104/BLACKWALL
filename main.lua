@@ -575,6 +575,22 @@ createActionButton("Infinite Reserve Ammo", function()
     end
     if applied == 0 then error("No reserve ammo attributes applied") end
 end)
+createActionButton("Set Shoot Type 3", function()
+    local tools = getPlayerTools()
+    if #tools == 0 then error("No weapons/tools found") end
+
+    local applied = 0
+    for _, gun in ipairs(tools) do
+        local ok = pcall(function()
+            gun:SetAttribute("ACSClientShootType", 3)
+        end)
+        if ok then
+            applied += 1
+        end
+    end
+
+    if applied == 0 then error("Could not set shoot type") end
+end)
 createSection("[ NOTES ]")
 createSection("Applies once to tools in Backpack and Character")
 
