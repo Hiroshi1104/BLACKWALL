@@ -841,19 +841,25 @@ local function startSpectating(player)
             pcall(function() uis.MouseBehavior = Enum.MouseBehavior.Default end)
         end
     end)
-    spectateMouseDeltaConnection = uis.InputChanged:Connect(function(input)
-        if not spectateMouseLook then return end
+    spectateMouseDeltaConnection = uis.InputChanged:Connect(function(input, gameProcessed)
+        -- MouseWheel input can be marked processed by Roblox UI, so handle it before
+        -- the RMB-only rotation check. Zoom remains available while spectating.
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            if spectateMouseLook then
+                local wheelDelta = input.Position.Z
+                spectateOrbitDistance = math.clamp(
+                    spectateOrbitDistance - wheelDelta * 2.5,
+                    2.5,
+                    40
+                )
+            end
+            return
+        end
 
+        if not spectateMouseLook then return end
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             spectateYaw = spectateYaw - input.Delta.X * spectateMouseSensitivity
             spectatePitch = math.clamp(spectatePitch - input.Delta.Y * spectateMouseSensitivity, math.rad(-75), math.rad(75))
-        elseif input.UserInputType == Enum.UserInputType.MouseWheel then
-            -- Roblox-style zoom: scroll only while holding RMB, keeping the target in focus.
-            spectateOrbitDistance = math.clamp(
-                spectateOrbitDistance - input.Position.Z * 2,
-                4,
-                30
-            )
         end
     end)
 
