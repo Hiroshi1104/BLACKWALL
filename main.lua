@@ -170,8 +170,8 @@ subtitle.TextColor3 = C.muted
 subtitle.TextSize = 9
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- Category tabs: each page keeps the existing BLACKWALL colors and controls.
-local tabBar = Instance.new("Frame")
+-- Category tabs: horizontally scrollable so every category remains reachable.
+local tabBar = Instance.new("ScrollingFrame")
 tabBar.Name = "CategoryTabs"
 tabBar.Parent = main
 tabBar.BackgroundColor3 = C.bg
@@ -179,6 +179,12 @@ tabBar.BorderSizePixel = 0
 tabBar.Position = UDim2.new(0, 8, 0, 65)
 tabBar.Size = UDim2.new(1, -16, 0, 32)
 tabBar.ZIndex = 8
+tabBar.ScrollingDirection = Enum.ScrollingDirection.X
+tabBar.ScrollBarThickness = 3
+tabBar.ScrollBarImageColor3 = C.accent
+tabBar.ScrollBarImageTransparency = 0.15
+tabBar.CanvasSize = UDim2.new(0, 0, 0, 0)
+tabBar.AutomaticCanvasSize = Enum.AutomaticSize.X
 local tabLayout = Instance.new("UIListLayout")
 tabLayout.Parent = tabBar
 tabLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -575,21 +581,53 @@ createActionButton("Infinite Reserve Ammo", function()
     end
     if applied == 0 then error("No reserve ammo attributes applied") end
 end)
-createActionButton("Set Shoot Type 3", function()
+
+-- Zero recoil: edits client-accessible ACS config tables for equipped/carried tools.
+-- This only works when the weapon's configuration ModuleScript is accessible to this client.
+createActionButton("Zero Recoil", function()
     local tools = getPlayerTools()
     if #tools == 0 then error("No weapons/tools found") end
 
-    local applied = 0
-    for _, gun in ipairs(tools) do
-        local ok = pcall(function()
-            gun:SetAttribute("ACSClientShootType", 3)
-        end)
-        if ok then
-            applied += 1
+    local modulesChanged, modulesChecked = 0, 0
+    local function zeroPairTable(tbl)
+        if type(tbl) ~= "table" then return false end
+        local changed = false
+        for _, key in ipairs({"camRecoilUp", "camRecoilTilt", "camRecoilLeft", "camRecoilRight",
+                              "gunRecoilUp", "gunRecoilTilt", "gunRecoilLeft", "gunRecoilRight"}) do
+            local pair = tbl[key]
+            if type(pair) == "table" then
+                for i = 1, #pair do
+                    if type(pair[i]) == "number" then pair[i] = 0; changed = true end
+                end
+            end
+        end
+        return changed
+    end
+
+    for _, tool in ipairs(tools) do
+        for _, obj in ipairs(tool:GetDescendants()) do
+            if obj:IsA("ModuleScript") then
+                modulesChecked += 1
+                local ok, config = pcall(require, obj)
+                if ok and type(config) == "table" then
+                    local changed = false
+                    if zeroPairTable(config.camRecoil) then changed = true end
+                    if zeroPairTable(config.gunRecoil) then changed = true end
+                    for _, key in ipairs({"Kickback", "MinRecoilPower", "MaxRecoilPower", "RecoilPowerStepAmount"}) do
+                        if type(config[key]) == "number" then
+                            config[key] = 0
+                            changed = true
+                        end
+                    end
+                    if changed then modulesChanged += 1 end
+                end
+            end
         end
     end
 
-    if applied == 0 then error("Could not set shoot type") end
+    if modulesChanged == 0 then
+        error("No accessible ACS recoil config found (checked " .. modulesChecked .. " ModuleScripts)")
+    end
 end)
 createSection("[ NOTES ]")
 createSection("Applies once to tools in Backpack and Character")
