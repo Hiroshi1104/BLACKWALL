@@ -760,11 +760,37 @@ spectateListLayout.Parent = spectateListScroll
 spectateListLayout.Padding = UDim.new(0, 3)
 spectateListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
+local spectateInputBeganConnection = nil
+local spectateInputEndedConnection = nil
+local spectateMouseDeltaConnection = nil
+local spectateKeys = {}
+local spectateMouseLook = false
+local spectateYaw = 0
+local spectatePitch = 0
+local spectateOrbitDistance = 12
+local spectateOrbitHeight = 4
+local spectateMouseSensitivity = 0.0035
+
 local function stopSpectating()
     if spectateRenderConnection then
         spectateRenderConnection:Disconnect()
         spectateRenderConnection = nil
     end
+    if spectateInputBeganConnection then
+        spectateInputBeganConnection:Disconnect()
+        spectateInputBeganConnection = nil
+    end
+    if spectateInputEndedConnection then
+        spectateInputEndedConnection:Disconnect()
+        spectateInputEndedConnection = nil
+    end
+    if spectateMouseDeltaConnection then
+        spectateMouseDeltaConnection:Disconnect()
+        spectateMouseDeltaConnection = nil
+    end
+    spectateKeys = {}
+    spectateMouseLook = false
+    pcall(function() uis.MouseBehavior = Enum.MouseBehavior.Default end)
     spectateTargetPlayer = nil
 
     local camera = ws.CurrentCamera
@@ -772,9 +798,7 @@ local function stopSpectating()
         camera.CameraType = Enum.CameraType.Custom
         local character = lplr.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            camera.CameraSubject = humanoid
-        end
+        if humanoid then camera.CameraSubject = humanoid end
     end
 end
 
@@ -793,27 +817,54 @@ local function startSpectating(player)
     spectateTargetPlayer = player
     local camera = ws.CurrentCamera
     if not camera then error("Camera is unavailable") end
+
+    -- Start behind the target. Hold RMB and move the mouse to orbit around them.
+    -- Scriptable camera bypasses Roblox's default camera collision pushback (wall noclip).
+    local initialPosition = (root.CFrame * CFrame.new(0, spectateOrbitHeight, spectateOrbitDistance)).Position
+    local focusPosition = root.Position + Vector3.new(0, 2, 0)
+    local initialCFrame = CFrame.lookAt(initialPosition, focusPosition)
+    local lookVector = initialCFrame.LookVector
+    spectateYaw = math.atan2(-lookVector.X, -lookVector.Z)
+    spectatePitch = math.asin(math.clamp(lookVector.Y, -1, 1))
     camera.CameraType = Enum.CameraType.Scriptable
+    camera.CFrame = initialCFrame
+
+    spectateInputBeganConnection = uis.InputBegan:Connect(function(input, gameProcessed)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            spectateMouseLook = true
+            pcall(function() uis.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition end)
+        end
+    end)
+    spectateInputEndedConnection = uis.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            spectateMouseLook = false
+            pcall(function() uis.MouseBehavior = Enum.MouseBehavior.Default end)
+        end
+    end)
+    spectateMouseDeltaConnection = uis.InputChanged:Connect(function(input)
+        if spectateMouseLook and input.UserInputType == Enum.UserInputType.MouseMovement then
+            spectateYaw = spectateYaw - input.Delta.X * spectateMouseSensitivity
+            spectatePitch = math.clamp(spectatePitch - input.Delta.Y * spectateMouseSensitivity, math.rad(-75), math.rad(75))
+        end
+    end)
 
     spectateRenderConnection = rs.RenderStepped:Connect(function()
         local currentCamera = ws.CurrentCamera
         local targetCharacter = spectateTargetPlayer and spectateTargetPlayer.Character
         local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
         local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
-
-        if not currentCamera or not spectateTargetPlayer
-            or spectateTargetPlayer.Parent ~= plrs
+        if not currentCamera or not spectateTargetPlayer or spectateTargetPlayer.Parent ~= plrs
             or not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
             stopSpectating()
             return
         end
 
-        -- Scriptable mode skips the default camera's wall-collision handling.
-        -- The camera follows behind and above the target even if geometry is between them.
         currentCamera.CameraType = Enum.CameraType.Scriptable
-        local cameraPosition = (targetRoot.CFrame * CFrame.new(0, 4, 12)).Position
-        local lookPosition = targetRoot.Position + Vector3.new(0, 2, 0)
-        currentCamera.CFrame = CFrame.lookAt(cameraPosition, lookPosition)
+        -- Orbit position stays a fixed distance from the target; mouse input only changes view angle.
+        local rotation = CFrame.fromOrientation(spectatePitch, spectateYaw, 0)
+        local focus = targetRoot.Position + Vector3.new(0, 2, 0)
+        local orbitOffset = -rotation.LookVector * spectateOrbitDistance + Vector3.new(0, spectateOrbitHeight - 2, 0)
+        currentCamera.CFrame = CFrame.lookAt(focus + orbitOffset, focus)
     end)
 end
 
