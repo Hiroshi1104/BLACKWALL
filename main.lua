@@ -609,6 +609,71 @@ createSection("[ MOVEMENT ]")
 createToggle("Noclip", "Noclip")
 createToggle("Fly", "Fly")
 createToggle("Speed Modifier", "Speed")
+
+-- Player teleport utility: cycles through available players, then moves the
+-- local character beside the selected target. This is separate from camera code.
+createSection("[ TELEPORT ]")
+local selectedTeleportPlayer = nil
+local teleportTargetButton = Instance.new("TextButton")
+teleportTargetButton.Name = "TeleportTargetSelector"
+teleportTargetButton.Parent = scroll
+teleportTargetButton.BackgroundColor3 = C.panel
+teleportTargetButton.Size = UDim2.new(1, -20, 0, 36)
+teleportTargetButton.Font = Enum.Font.Code
+teleportTargetButton.Text = "TARGET: SELECT PLAYER"
+teleportTargetButton.TextColor3 = C.text
+teleportTargetButton.TextSize = 12
+teleportTargetButton.BorderSizePixel = 0
+teleportTargetButton.ZIndex = 7
+teleportTargetButton.AutoButtonColor = false
+corner(teleportTargetButton, 2)
+local teleportTargetEdge = stroke(teleportTargetButton, C.outline, 0.12, 1)
+teleportTargetButton.MouseEnter:Connect(function()
+    teleportTargetButton.BackgroundColor3 = C.panel2
+    teleportTargetEdge.Color = C.accent
+end)
+teleportTargetButton.MouseLeave:Connect(function()
+    teleportTargetButton.BackgroundColor3 = C.panel
+    teleportTargetEdge.Color = C.outline
+end)
+local function getTeleportTargets()
+    local targets = {}
+    for _, player in ipairs(plrs:GetPlayers()) do
+        if player ~= lplr and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            table.insert(targets, player)
+        end
+    end
+    table.sort(targets, function(a, b) return a.Name:lower() < b.Name:lower() end)
+    return targets
+end
+teleportTargetButton.MouseButton1Click:Connect(function()
+    local targets = getTeleportTargets()
+    if #targets == 0 then
+        selectedTeleportPlayer = nil
+        teleportTargetButton.Text = "TARGET: NO PLAYERS FOUND"
+        return
+    end
+    local currentIndex = 0
+    for i, player in ipairs(targets) do
+        if player == selectedTeleportPlayer then currentIndex = i break end
+    end
+    selectedTeleportPlayer = targets[(currentIndex % #targets) + 1]
+    teleportTargetButton.Text = "TARGET: " .. selectedTeleportPlayer.Name
+end)
+createActionButton("Teleport to Selected Player", function()
+    if not selectedTeleportPlayer or selectedTeleportPlayer.Parent ~= plrs then
+        error("Select an available player first")
+    end
+    local targetCharacter = selectedTeleportPlayer.Character
+    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+    local character = lplr.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not targetRoot then error("Target character is unavailable") end
+    if not root or not humanoid or humanoid.Health <= 0 then error("Your character is unavailable") end
+    root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
+end)
+
 createSection("[ MOVEMENT SETTINGS ]")
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
