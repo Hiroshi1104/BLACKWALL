@@ -277,7 +277,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Movement", "Teleport", "Gun", "Settings"}) do
+for order, name in ipairs({"Main", "Movement", "Teleport", "Spectate", "Gun", "Settings"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -614,19 +614,16 @@ createSection("[ MOVEMENT SETTINGS ]")
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
 
--- Dedicated Teleport tab with a clickable, refreshable player list.
+-- Dedicated Teleport tab with a visible, refreshable player list.
 setTab("Teleport")
 createSection("[ SELECT PLAYER ]")
-
 local selectedTeleportPlayer = nil
-local teleportPlayerRows = {}
-
 local teleportPlayerList = Instance.new("Frame")
 teleportPlayerList.Name = "TeleportPlayerList"
 teleportPlayerList.Parent = scroll
 teleportPlayerList.BackgroundColor3 = C.panel
 teleportPlayerList.BorderSizePixel = 0
-teleportPlayerList.Size = UDim2.new(1, -20, 0, 190)
+teleportPlayerList.Size = UDim2.new(1, -20, 0, 180)
 teleportPlayerList.ZIndex = 7
 corner(teleportPlayerList, 2)
 stroke(teleportPlayerList, C.outline, 0.12, 1)
@@ -644,158 +641,265 @@ playerListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 playerListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 playerListScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 playerListScroll.ZIndex = 8
-
 local playerListLayout = Instance.new("UIListLayout")
 playerListLayout.Parent = playerListScroll
 playerListLayout.Padding = UDim.new(0, 3)
-playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-local selectedTeleportLabel = Instance.new("TextLabel")
-selectedTeleportLabel.Name = "SelectedPlayerLabel"
-selectedTeleportLabel.Parent = scroll
-selectedTeleportLabel.BackgroundColor3 = C.panel2
-selectedTeleportLabel.BorderSizePixel = 0
-selectedTeleportLabel.Size = UDim2.new(1, -20, 0, 30)
-selectedTeleportLabel.Font = Enum.Font.Code
-selectedTeleportLabel.Text = "SELECTED: NONE"
-selectedTeleportLabel.TextColor3 = C.muted
-selectedTeleportLabel.TextSize = 11
-selectedTeleportLabel.TextTruncate = Enum.TextTruncate.AtEnd
-selectedTeleportLabel.ZIndex = 7
-corner(selectedTeleportLabel, 2)
+playerListLayout.SortOrder = Enum.SortOrder.Name
 
 local function getTeleportTargets()
+    local targets = {}
+    for _, player in ipairs(plrs:GetPlayers()) do
+        if player ~= lplr and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            table.insert(targets, player)
+        end
+    end
+    table.sort(targets, function(a, b) return a.Name:lower() < b.Name:lower() end)
+    return targets
+end
+
+local function refreshTeleportPlayers()
+    for _, child in ipairs(playerListScroll:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+    end
+    local targets = getTeleportTargets()
+    if #targets == 0 then
+        local empty = Instance.new("TextLabel")
+        empty.Parent = playerListScroll
+        empty.Size = UDim2.new(1, -4, 0, 30)
+        empty.BackgroundTransparency = 1
+        empty.Font = Enum.Font.Code
+        empty.Text = "NO PLAYERS AVAILABLE"
+        empty.TextColor3 = C.muted
+        empty.TextSize = 12
+        empty.ZIndex = 9
+        selectedTeleportPlayer = nil
+        return
+    end
+    local selectionStillValid = false
+    for _, player in ipairs(targets) do
+        if player == selectedTeleportPlayer then selectionStillValid = true end
+        local item = Instance.new("TextButton")
+        item.Name = "Player_" .. player.UserId
+        item.Parent = playerListScroll
+        item.Size = UDim2.new(1, -4, 0, 30)
+        item.BackgroundColor3 = player == selectedTeleportPlayer and C.panel2 or C.bg
+        item.BorderSizePixel = 0
+        item.AutoButtonColor = false
+        item.Font = Enum.Font.Code
+        item.Text = (player == selectedTeleportPlayer and ">  " or "   ") .. player.Name .. "  (@" .. player.DisplayName .. ")"
+        item.TextColor3 = player == selectedTeleportPlayer and C.trueState or C.text
+        item.TextSize = 11
+        item.TextXAlignment = Enum.TextXAlignment.Left
+        item.ZIndex = 9
+        corner(item, 2)
+        item.MouseButton1Click:Connect(function()
+            selectedTeleportPlayer = player
+            refreshTeleportPlayers()
+        end)
+    end
+    if not selectionStillValid then selectedTeleportPlayer = nil end
+end
+
+local refreshPlayersButton = createActionButton("Refresh Player List", refreshTeleportPlayers)
+refreshPlayersButton.LayoutOrder = 2
+refreshTeleportPlayers()
+plrs.PlayerAdded:Connect(refreshTeleportPlayers)
+plrs.PlayerRemoving:Connect(function(player)
+    if player == selectedTeleportPlayer then selectedTeleportPlayer = nil end
+    refreshTeleportPlayers()
+end)
+
+createActionButton("Teleport to Selected Player", function()
+    if not selectedTeleportPlayer or selectedTeleportPlayer.Parent ~= plrs then
+        error("Select a player from the list first")
+    end
+    local targetCharacter = selectedTeleportPlayer.Character
+    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+    local character = lplr.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not targetRoot then error("Target character is unavailable") end
+    if not root or not humanoid or humanoid.Health <= 0 then error("Your character is unavailable") end
+    root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
+end)
+
+-- Spectate tab: refreshable player list and a Scriptable camera that does not
+-- run Roblox's normal camera collision checks, so walls do not push the view away.
+setTab("Spectate")
+createSection("[ SPECTATE PLAYER ]")
+
+local selectedSpectatePlayer = nil
+local spectateTargetPlayer = nil
+local spectateRenderConnection = nil
+local spectatePlayerList = Instance.new("Frame")
+spectatePlayerList.Name = "SpectatePlayerList"
+spectatePlayerList.Parent = scroll
+spectatePlayerList.BackgroundColor3 = C.panel
+spectatePlayerList.BorderSizePixel = 0
+spectatePlayerList.Size = UDim2.new(1, -20, 0, 180)
+spectatePlayerList.ZIndex = 7
+corner(spectatePlayerList, 2)
+stroke(spectatePlayerList, C.outline, 0.12, 1)
+
+local spectateListScroll = Instance.new("ScrollingFrame")
+spectateListScroll.Name = "Players"
+spectateListScroll.Parent = spectatePlayerList
+spectateListScroll.BackgroundTransparency = 1
+spectateListScroll.BorderSizePixel = 0
+spectateListScroll.Position = UDim2.new(0, 4, 0, 4)
+spectateListScroll.Size = UDim2.new(1, -8, 1, -8)
+spectateListScroll.ScrollBarThickness = 4
+spectateListScroll.ScrollBarImageColor3 = C.accent
+spectateListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+spectateListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+spectateListScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+spectateListScroll.ZIndex = 8
+local spectateListLayout = Instance.new("UIListLayout")
+spectateListLayout.Parent = spectateListScroll
+spectateListLayout.Padding = UDim.new(0, 3)
+spectateListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function stopSpectating()
+    if spectateRenderConnection then
+        spectateRenderConnection:Disconnect()
+        spectateRenderConnection = nil
+    end
+    spectateTargetPlayer = nil
+
+    local camera = ws.CurrentCamera
+    if camera then
+        camera.CameraType = Enum.CameraType.Custom
+        local character = lplr.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            camera.CameraSubject = humanoid
+        end
+    end
+end
+
+local function startSpectating(player)
+    if not player or player == lplr or player.Parent ~= plrs then
+        error("Select an available player from the list first")
+    end
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0 then
+        error("Target character is unavailable")
+    end
+
+    stopSpectating()
+    spectateTargetPlayer = player
+    local camera = ws.CurrentCamera
+    if not camera then error("Camera is unavailable") end
+    camera.CameraType = Enum.CameraType.Scriptable
+
+    spectateRenderConnection = rs.RenderStepped:Connect(function()
+        local currentCamera = ws.CurrentCamera
+        local targetCharacter = spectateTargetPlayer and spectateTargetPlayer.Character
+        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+        local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+
+        if not currentCamera or not spectateTargetPlayer
+            or spectateTargetPlayer.Parent ~= plrs
+            or not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
+            stopSpectating()
+            return
+        end
+
+        -- Scriptable mode skips the default camera's wall-collision handling.
+        -- The camera follows behind and above the target even if geometry is between them.
+        currentCamera.CameraType = Enum.CameraType.Scriptable
+        local cameraPosition = (targetRoot.CFrame * CFrame.new(0, 4, 12)).Position
+        local lookPosition = targetRoot.Position + Vector3.new(0, 2, 0)
+        currentCamera.CFrame = CFrame.lookAt(cameraPosition, lookPosition)
+    end)
+end
+
+local function refreshSpectatePlayers()
+    for _, child in ipairs(spectateListScroll:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+
     local targets = {}
     for _, player in ipairs(plrs:GetPlayers()) do
         if player ~= lplr then
             table.insert(targets, player)
         end
     end
-
     table.sort(targets, function(a, b)
         return a.Name:lower() < b.Name:lower()
     end)
-    return targets
-end
 
-local function refreshTeleportPlayers()
-    for _, row in ipairs(teleportPlayerRows) do
-        row:Destroy()
-    end
-    table.clear(teleportPlayerRows)
-
-    local targets = getTeleportTargets()
-    local selectionValid = false
+    local selectionStillValid = false
     for _, player in ipairs(targets) do
-        if player == selectedTeleportPlayer then
-            selectionValid = true
-            break
-        end
+        if player == selectedSpectatePlayer then selectionStillValid = true end
     end
-    if not selectionValid then
-        selectedTeleportPlayer = nil
-    end
-
-    if selectedTeleportPlayer then
-        selectedTeleportLabel.Text = "SELECTED: " .. selectedTeleportPlayer.Name
-        selectedTeleportLabel.TextColor3 = C.trueState
-    else
-        selectedTeleportLabel.Text = "SELECTED: NONE"
-        selectedTeleportLabel.TextColor3 = C.muted
-    end
+    if not selectionStillValid then selectedSpectatePlayer = nil end
 
     if #targets == 0 then
         local empty = Instance.new("TextLabel")
         empty.Name = "EmptyPlayerList"
-        empty.Parent = playerListScroll
-        empty.LayoutOrder = 1
+        empty.Parent = spectateListScroll
         empty.Size = UDim2.new(1, -4, 0, 30)
         empty.BackgroundTransparency = 1
         empty.Font = Enum.Font.Code
         empty.Text = "NO OTHER PLAYERS FOUND"
         empty.TextColor3 = C.muted
-        empty.TextSize = 11
+        empty.TextSize = 12
         empty.ZIndex = 9
-        table.insert(teleportPlayerRows, empty)
         return
     end
 
     for index, player in ipairs(targets) do
-        local isSelected = player == selectedTeleportPlayer
+        local selected = player == selectedSpectatePlayer
         local item = Instance.new("TextButton")
         item.Name = "Player_" .. player.UserId
-        item.Parent = playerListScroll
+        item.Parent = spectateListScroll
         item.LayoutOrder = index
         item.Size = UDim2.new(1, -4, 0, 30)
-        item.BackgroundColor3 = isSelected and C.panel2 or C.bg
+        item.BackgroundColor3 = selected and C.panel2 or C.bg
         item.BorderSizePixel = 0
         item.AutoButtonColor = false
         item.Font = Enum.Font.Code
-        item.Text = (isSelected and ">  " or "   ") .. player.Name
-            .. "  (@" .. player.DisplayName .. ")"
-        item.TextColor3 = isSelected and C.trueState or C.text
+        item.Text = (selected and ">  " or "   ") .. player.Name .. "  (@" .. player.DisplayName .. ")"
+        item.TextColor3 = selected and C.trueState or C.text
         item.TextSize = 11
         item.TextXAlignment = Enum.TextXAlignment.Left
-        item.TextTruncate = Enum.TextTruncate.AtEnd
         item.ZIndex = 9
         corner(item, 2)
-
         item.MouseButton1Click:Connect(function()
             if player.Parent ~= plrs then
-                refreshTeleportPlayers()
+                refreshSpectatePlayers()
                 return
             end
-            selectedTeleportPlayer = player
-            refreshTeleportPlayers()
+            selectedSpectatePlayer = player
+            refreshSpectatePlayers()
         end)
-
-        item.MouseEnter:Connect(function()
-            if player ~= selectedTeleportPlayer then
-                item.BackgroundColor3 = C.panel2
-            end
-        end)
-        item.MouseLeave:Connect(function()
-            item.BackgroundColor3 =
-                player == selectedTeleportPlayer and C.panel2 or C.bg
-        end)
-
-        table.insert(teleportPlayerRows, item)
     end
 end
 
-local refreshPlayersButton = createActionButton("Refresh Player List", refreshTeleportPlayers)
-refreshPlayersButton.LayoutOrder = 3
-refreshTeleportPlayers()
-
-plrs.PlayerAdded:Connect(refreshTeleportPlayers)
-plrs.PlayerRemoving:Connect(function(player)
-    if player == selectedTeleportPlayer then
-        selectedTeleportPlayer = nil
-    end
-    refreshTeleportPlayers()
+createActionButton("Refresh Spectate List", refreshSpectatePlayers)
+createActionButton("Spectate Selected Player", function()
+    startSpectating(selectedSpectatePlayer)
 end)
-
-createActionButton("Teleport to Selected Player", function()
-    local target = selectedTeleportPlayer
-    if not target or target.Parent ~= plrs then
-        error("Select a player from the list first")
+createActionButton("Stop Spectating", function()
+    stopSpectating()
+end)
+refreshSpectatePlayers()
+plrs.PlayerAdded:Connect(refreshSpectatePlayers)
+plrs.PlayerRemoving:Connect(function(player)
+    if player == selectedSpectatePlayer then selectedSpectatePlayer = nil end
+    if player == spectateTargetPlayer then stopSpectating() end
+    refreshSpectatePlayers()
+end)
+lplr.CharacterAdded:Connect(function()
+    -- Keep the camera local after respawning if the spectate target vanished.
+    if not spectateTargetPlayer then
+        task.defer(stopSpectating)
     end
-
-    local targetCharacter = target.Character
-    local targetRoot = targetCharacter
-        and targetCharacter:FindFirstChild("HumanoidRootPart")
-    local character = lplr.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-
-    if not targetRoot then
-        error("Target character is unavailable")
-    end
-    if not root or not humanoid or humanoid.Health <= 0 then
-        error("Your character is unavailable")
-    end
-
-    root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
 end)
 
 -- Gun: one-shot ammo attribute actions for tools currently in Backpack/Character.
