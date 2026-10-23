@@ -924,11 +924,11 @@ spectateInfoTitle.Name = "InfoTitle"
 spectateInfoTitle.Parent = spectateInfoCard
 spectateInfoTitle.BackgroundTransparency = 1
 spectateInfoTitle.Position = UDim2.new(0, 100, 0, 8)
-spectateInfoTitle.Size = UDim2.new(1, -108, 0, 18)
+spectateInfoTitle.Size = UDim2.new(1, -190, 0, 20)
 spectateInfoTitle.Font = Enum.Font.Code
 spectateInfoTitle.Text = "SELECTED PLAYER INFO"
 spectateInfoTitle.TextColor3 = C.accent
-spectateInfoTitle.TextSize = 11
+spectateInfoTitle.TextSize = 12
 spectateInfoTitle.TextXAlignment = Enum.TextXAlignment.Left
 spectateInfoTitle.ZIndex = 8
 
@@ -936,16 +936,59 @@ local spectateInfoText = Instance.new("TextLabel")
 spectateInfoText.Name = "PlayerDetails"
 spectateInfoText.Parent = spectateInfoCard
 spectateInfoText.BackgroundTransparency = 1
-spectateInfoText.Position = UDim2.new(0, 100, 0, 30)
-spectateInfoText.Size = UDim2.new(1, -108, 0, 72)
+spectateInfoText.Position = UDim2.new(0, 100, 0, 32)
+spectateInfoText.Size = UDim2.new(1, -190, 0, 72)
 spectateInfoText.Font = Enum.Font.Code
 spectateInfoText.Text = "Choose a player from the list above."
 spectateInfoText.TextColor3 = C.muted
-spectateInfoText.TextSize = 10
+spectateInfoText.TextSize = 12
 spectateInfoText.TextWrapped = true
 spectateInfoText.TextXAlignment = Enum.TextXAlignment.Left
 spectateInfoText.TextYAlignment = Enum.TextYAlignment.Top
 spectateInfoText.ZIndex = 8
+
+local spectateCopyButton = Instance.new("TextButton")
+spectateCopyButton.Name = "CopyPlayerInfo"
+spectateCopyButton.Parent = spectateInfoCard
+spectateCopyButton.Position = UDim2.new(1, -78, 0, 36)
+spectateCopyButton.Size = UDim2.new(0, 68, 0, 30)
+spectateCopyButton.BackgroundColor3 = C.panel2
+spectateCopyButton.BorderSizePixel = 0
+spectateCopyButton.AutoButtonColor = true
+spectateCopyButton.Font = Enum.Font.Code
+spectateCopyButton.Text = "COPY"
+spectateCopyButton.TextColor3 = C.text
+spectateCopyButton.TextSize = 12
+spectateCopyButton.ZIndex = 9
+corner(spectateCopyButton, 2)
+stroke(spectateCopyButton, C.outline, 0.12, 1)
+
+spectateCopyButton.MouseButton1Click:Connect(function()
+    local player = selectedSpectatePlayer
+    if not player or player.Parent ~= plrs then
+        spectateCopyButton.Text = "NO PLAYER"
+        task.delay(1.2, function()
+            if spectateCopyButton.Parent then spectateCopyButton.Text = "COPY" end
+        end)
+        return
+    end
+
+    local info = "Username: @" .. player.Name
+        .. "\nDisplay Name: " .. player.DisplayName
+        .. "\nUser ID: " .. tostring(player.UserId)
+
+    -- Clipboard functions are provided by some script executors, not standard Roblox Lua.
+    local copyFn = setclipboard or toclipboard
+    if type(copyFn) == "function" then
+        local ok = pcall(copyFn, info)
+        spectateCopyButton.Text = ok and "COPIED!" or "FAILED"
+    else
+        spectateCopyButton.Text = "UNAVAILABLE"
+    end
+    task.delay(1.5, function()
+        if spectateCopyButton.Parent then spectateCopyButton.Text = "COPY" end
+    end)
+end)
 
 updateSpectateInfo = function(player)
     if not player or player.Parent ~= plrs then
