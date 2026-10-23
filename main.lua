@@ -582,53 +582,21 @@ createActionButton("Infinite Reserve Ammo", function()
     if applied == 0 then error("No reserve ammo attributes applied") end
 end)
 
--- Zero recoil: edits client-accessible ACS config tables for equipped/carried tools.
--- This only works when the weapon's configuration ModuleScript is accessible to this client.
-createActionButton("Zero Recoil", function()
+-- Fire type: set the client-side ACS shoot-type attribute on carried/equipped tools.
+-- Value 3 matches the ShootType = 3 configuration shown by the user.
+createSection("[ FIRE TYPE ]")
+createActionButton("Set Fire Type (ShootType 3)", function()
     local tools = getPlayerTools()
     if #tools == 0 then error("No weapons/tools found") end
 
-    local modulesChanged, modulesChecked = 0, 0
-    local function zeroPairTable(tbl)
-        if type(tbl) ~= "table" then return false end
-        local changed = false
-        for _, key in ipairs({"camRecoilUp", "camRecoilTilt", "camRecoilLeft", "camRecoilRight",
-                              "gunRecoilUp", "gunRecoilTilt", "gunRecoilLeft", "gunRecoilRight"}) do
-            local pair = tbl[key]
-            if type(pair) == "table" then
-                for i = 1, #pair do
-                    if type(pair[i]) == "number" then pair[i] = 0; changed = true end
-                end
-            end
-        end
-        return changed
-    end
-
+    local applied = 0
     for _, tool in ipairs(tools) do
-        for _, obj in ipairs(tool:GetDescendants()) do
-            if obj:IsA("ModuleScript") then
-                modulesChecked += 1
-                local ok, config = pcall(require, obj)
-                if ok and type(config) == "table" then
-                    local changed = false
-                    if zeroPairTable(config.camRecoil) then changed = true end
-                    if zeroPairTable(config.gunRecoil) then changed = true end
-                    for _, key in ipairs({"Kickback", "MinRecoilPower", "MaxRecoilPower", "RecoilPowerStepAmount"}) do
-                        if type(config[key]) == "number" then
-                            config[key] = 0
-                            changed = true
-                        end
-                    end
-                    if changed then modulesChanged += 1 end
-                end
-            end
-        end
+        tool:SetAttribute("ACSClientShootType", 3)
+        applied += 1
     end
-
-    if modulesChanged == 0 then
-        error("No accessible ACS recoil config found (checked " .. modulesChecked .. " ModuleScripts)")
-    end
+    if applied == 0 then error("No fire-type attributes applied") end
 end)
+
 createSection("[ NOTES ]")
 createSection("Applies once to tools in Backpack and Character")
 
