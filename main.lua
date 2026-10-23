@@ -842,9 +842,18 @@ local function startSpectating(player)
         end
     end)
     spectateMouseDeltaConnection = uis.InputChanged:Connect(function(input)
-        if spectateMouseLook and input.UserInputType == Enum.UserInputType.MouseMovement then
+        if not spectateMouseLook then return end
+
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
             spectateYaw = spectateYaw - input.Delta.X * spectateMouseSensitivity
             spectatePitch = math.clamp(spectatePitch - input.Delta.Y * spectateMouseSensitivity, math.rad(-75), math.rad(75))
+        elseif input.UserInputType == Enum.UserInputType.MouseWheel then
+            -- Roblox-style zoom: scroll only while holding RMB, keeping the target in focus.
+            spectateOrbitDistance = math.clamp(
+                spectateOrbitDistance - input.Position.Z * 2,
+                4,
+                30
+            )
         end
     end)
 
