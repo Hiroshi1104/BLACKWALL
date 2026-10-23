@@ -93,10 +93,37 @@ end
 if type(loadedSettings.flySpeed) == "number" then flySpeed = math.clamp(loadedSettings.flySpeed, 1, 200) end
 
 local function saveSettings()
-    if type(writefile) ~= "function" then return end
-    local payload = { toggles = toggles, cfg = cfg, hitboxSize = hitboxCfg.size.X, flySpeed = flySpeed }
-    local ok, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
-    if ok then pcall(writefile, settingsFile, encoded) end
+    if type(writefile) ~= "function" then return false end
+
+    -- JSONEncode cannot serialize Color3 / other Roblox datatypes in cfg.
+    -- Save only the numeric config fields that this menu actually edits.
+    local numericCfg = {
+        aimStrength = cfg.aimStrength,
+        fov = cfg.fov,
+        speed = cfg.speed,
+        gatherDistance = cfg.gatherDistance,
+    }
+    local payload = {
+        toggles = toggles,
+        cfg = numericCfg,
+        hitboxSize = hitboxCfg.size.X,
+        flySpeed = flySpeed,
+    }
+
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(payload)
+    end)
+    if not ok then
+        warn("[BLACKWALL] Could not encode settings: " .. tostring(encoded))
+        return false
+    end
+
+    local writeOk, writeErr = pcall(writefile, settingsFile, encoded)
+    if not writeOk then
+        warn("[BLACKWALL] Could not write settings file: " .. tostring(writeErr))
+        return false
+    end
+    return true
 end
 
 -- UI ONLY: refreshed HRSH interface. Feature logic below this block is unchanged.
