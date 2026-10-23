@@ -247,7 +247,7 @@ tabBar.Position = UDim2.new(0, 8, 0, 65)
 tabBar.Size = UDim2.new(1, -16, 0, 32)
 tabBar.ZIndex = 8
 tabBar.ScrollingDirection = Enum.ScrollingDirection.X
-tabBar.ScrollBarThickness = 3
+tabBar.ScrollBarThickness = 0
 tabBar.ScrollBarImageColor3 = C.accent
 tabBar.ScrollBarImageTransparency = 0.15
 tabBar.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -307,13 +307,14 @@ for order, name in ipairs({"Main", "Movement", "Teleport", "Spectate", "Gun", "S
     button.Name = name .. "Tab"
     button.Parent = tabBar
     button.LayoutOrder = order
-    button.Size = UDim2.new(0, 112, 1, 0)
+    local tabWidths = {Main = 48, Movement = 64, Teleport = 60, Spectate = 60, Gun = 42, Settings = 56}
+    button.Size = UDim2.new(0, tabWidths[name] or 60, 1, 0)
     button.BackgroundColor3 = C.panel
     button.BorderSizePixel = 0
     button.AutoButtonColor = false
     button.Font = Enum.Font.Code
     button.Text = string.upper(name)
-    button.TextSize = 12
+    button.TextSize = 10
     button.TextColor3 = C.muted
     button.ZIndex = 9
     corner(button, 2)
