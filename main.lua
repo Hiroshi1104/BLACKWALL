@@ -277,7 +277,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Movement", "Gun", "Settings"}) do
+for order, name in ipairs({"Main", "Movement", "Teleport", "Gun", "Settings"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -610,32 +610,42 @@ createToggle("Noclip", "Noclip")
 createToggle("Fly", "Fly")
 createToggle("Speed Modifier", "Speed")
 
--- Player teleport utility: cycles through available players, then moves the
--- local character beside the selected target. This is separate from camera code.
-createSection("[ TELEPORT ]")
+createSection("[ MOVEMENT SETTINGS ]")
+createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
+createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
+
+-- Dedicated Teleport tab with a visible, refreshable player list.
+setTab("Teleport")
+createSection("[ SELECT PLAYER ]")
 local selectedTeleportPlayer = nil
-local teleportTargetButton = Instance.new("TextButton")
-teleportTargetButton.Name = "TeleportTargetSelector"
-teleportTargetButton.Parent = scroll
-teleportTargetButton.BackgroundColor3 = C.panel
-teleportTargetButton.Size = UDim2.new(1, -20, 0, 36)
-teleportTargetButton.Font = Enum.Font.Code
-teleportTargetButton.Text = "TARGET: SELECT PLAYER"
-teleportTargetButton.TextColor3 = C.text
-teleportTargetButton.TextSize = 12
-teleportTargetButton.BorderSizePixel = 0
-teleportTargetButton.ZIndex = 7
-teleportTargetButton.AutoButtonColor = false
-corner(teleportTargetButton, 2)
-local teleportTargetEdge = stroke(teleportTargetButton, C.outline, 0.12, 1)
-teleportTargetButton.MouseEnter:Connect(function()
-    teleportTargetButton.BackgroundColor3 = C.panel2
-    teleportTargetEdge.Color = C.accent
-end)
-teleportTargetButton.MouseLeave:Connect(function()
-    teleportTargetButton.BackgroundColor3 = C.panel
-    teleportTargetEdge.Color = C.outline
-end)
+local teleportPlayerList = Instance.new("Frame")
+teleportPlayerList.Name = "TeleportPlayerList"
+teleportPlayerList.Parent = scroll
+teleportPlayerList.BackgroundColor3 = C.panel
+teleportPlayerList.BorderSizePixel = 0
+teleportPlayerList.Size = UDim2.new(1, -20, 0, 180)
+teleportPlayerList.ZIndex = 7
+corner(teleportPlayerList, 2)
+stroke(teleportPlayerList, C.outline, 0.12, 1)
+
+local playerListScroll = Instance.new("ScrollingFrame")
+playerListScroll.Name = "Players"
+playerListScroll.Parent = teleportPlayerList
+playerListScroll.BackgroundTransparency = 1
+playerListScroll.BorderSizePixel = 0
+playerListScroll.Position = UDim2.new(0, 4, 0, 4)
+playerListScroll.Size = UDim2.new(1, -8, 1, -8)
+playerListScroll.ScrollBarThickness = 4
+playerListScroll.ScrollBarImageColor3 = C.accent
+playerListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+playerListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+playerListScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+playerListScroll.ZIndex = 8
+local playerListLayout = Instance.new("UIListLayout")
+playerListLayout.Parent = playerListScroll
+playerListLayout.Padding = UDim.new(0, 3)
+playerListLayout.SortOrder = Enum.SortOrder.Name
+
 local function getTeleportTargets()
     local targets = {}
     for _, player in ipairs(plrs:GetPlayers()) do
@@ -646,23 +656,62 @@ local function getTeleportTargets()
     table.sort(targets, function(a, b) return a.Name:lower() < b.Name:lower() end)
     return targets
 end
-teleportTargetButton.MouseButton1Click:Connect(function()
+
+local function refreshTeleportPlayers()
+    for _, child in ipairs(playerListScroll:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+    end
     local targets = getTeleportTargets()
     if #targets == 0 then
+        local empty = Instance.new("TextLabel")
+        empty.Parent = playerListScroll
+        empty.Size = UDim2.new(1, -4, 0, 30)
+        empty.BackgroundTransparency = 1
+        empty.Font = Enum.Font.Code
+        empty.Text = "NO PLAYERS AVAILABLE"
+        empty.TextColor3 = C.muted
+        empty.TextSize = 12
+        empty.ZIndex = 9
         selectedTeleportPlayer = nil
-        teleportTargetButton.Text = "TARGET: NO PLAYERS FOUND"
         return
     end
-    local currentIndex = 0
-    for i, player in ipairs(targets) do
-        if player == selectedTeleportPlayer then currentIndex = i break end
+    local selectionStillValid = false
+    for _, player in ipairs(targets) do
+        if player == selectedTeleportPlayer then selectionStillValid = true end
+        local item = Instance.new("TextButton")
+        item.Name = "Player_" .. player.UserId
+        item.Parent = playerListScroll
+        item.Size = UDim2.new(1, -4, 0, 30)
+        item.BackgroundColor3 = player == selectedTeleportPlayer and C.panel2 or C.bg
+        item.BorderSizePixel = 0
+        item.AutoButtonColor = false
+        item.Font = Enum.Font.Code
+        item.Text = (player == selectedTeleportPlayer and ">  " or "   ") .. player.Name .. "  (@" .. player.DisplayName .. ")"
+        item.TextColor3 = player == selectedTeleportPlayer and C.trueState or C.text
+        item.TextSize = 11
+        item.TextXAlignment = Enum.TextXAlignment.Left
+        item.ZIndex = 9
+        corner(item, 2)
+        item.MouseButton1Click:Connect(function()
+            selectedTeleportPlayer = player
+            refreshTeleportPlayers()
+        end)
     end
-    selectedTeleportPlayer = targets[(currentIndex % #targets) + 1]
-    teleportTargetButton.Text = "TARGET: " .. selectedTeleportPlayer.Name
+    if not selectionStillValid then selectedTeleportPlayer = nil end
+end
+
+local refreshPlayersButton = createActionButton("Refresh Player List", refreshTeleportPlayers)
+refreshPlayersButton.LayoutOrder = 2
+refreshTeleportPlayers()
+plrs.PlayerAdded:Connect(refreshTeleportPlayers)
+plrs.PlayerRemoving:Connect(function(player)
+    if player == selectedTeleportPlayer then selectedTeleportPlayer = nil end
+    refreshTeleportPlayers()
 end)
+
 createActionButton("Teleport to Selected Player", function()
     if not selectedTeleportPlayer or selectedTeleportPlayer.Parent ~= plrs then
-        error("Select an available player first")
+        error("Select a player from the list first")
     end
     local targetCharacter = selectedTeleportPlayer.Character
     local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
@@ -673,10 +722,6 @@ createActionButton("Teleport to Selected Player", function()
     if not root or not humanoid or humanoid.Health <= 0 then error("Your character is unavailable") end
     root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
 end)
-
-createSection("[ MOVEMENT SETTINGS ]")
-createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
-createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
 
 -- Gun: one-shot ammo attribute actions for tools currently in Backpack/Character.
 -- math.huge is attempted first; if Roblox rejects non-finite attribute values,
