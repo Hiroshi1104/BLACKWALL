@@ -817,6 +817,8 @@ local function startSpectating(player)
     end)
 end
 
+local updateSpectateInfo
+
 local function refreshSpectatePlayers()
     for _, child in ipairs(spectateListScroll:GetChildren()) do
         if child:IsA("TextButton") or child:IsA("TextLabel") then
@@ -838,7 +840,10 @@ local function refreshSpectatePlayers()
     for _, player in ipairs(targets) do
         if player == selectedSpectatePlayer then selectionStillValid = true end
     end
-    if not selectionStillValid then selectedSpectatePlayer = nil end
+    if not selectionStillValid then
+        selectedSpectatePlayer = nil
+        if updateSpectateInfo then updateSpectateInfo(nil) end
+    end
 
     if #targets == 0 then
         local empty = Instance.new("TextLabel")
@@ -878,6 +883,7 @@ local function refreshSpectatePlayers()
             end
             selectedSpectatePlayer = player
             refreshSpectatePlayers()
+            updateSpectateInfo(player)
         end)
     end
 end
@@ -889,10 +895,93 @@ end)
 createActionButton("Stop Spectating", function()
     stopSpectating()
 end)
+
+-- Selected-player information card, displayed directly below Stop Spectating.
+local spectateInfoCard = Instance.new("Frame")
+spectateInfoCard.Name = "SelectedPlayerInfo"
+spectateInfoCard.Parent = scroll
+spectateInfoCard.BackgroundColor3 = C.panel
+spectateInfoCard.BorderSizePixel = 0
+spectateInfoCard.Size = UDim2.new(1, -20, 0, 112)
+spectateInfoCard.ZIndex = 7
+corner(spectateInfoCard, 2)
+stroke(spectateInfoCard, C.outline, 0.12, 1)
+
+local spectateAvatar = Instance.new("ImageLabel")
+spectateAvatar.Name = "Avatar"
+spectateAvatar.Parent = spectateInfoCard
+spectateAvatar.BackgroundColor3 = C.bg
+spectateAvatar.BorderSizePixel = 0
+spectateAvatar.Position = UDim2.new(0, 8, 0, 8)
+spectateAvatar.Size = UDim2.new(0, 82, 0, 96)
+spectateAvatar.ScaleType = Enum.ScaleType.Fit
+spectateAvatar.Image = ""
+spectateAvatar.ZIndex = 8
+corner(spectateAvatar, 2)
+
+local spectateInfoTitle = Instance.new("TextLabel")
+spectateInfoTitle.Name = "InfoTitle"
+spectateInfoTitle.Parent = spectateInfoCard
+spectateInfoTitle.BackgroundTransparency = 1
+spectateInfoTitle.Position = UDim2.new(0, 100, 0, 8)
+spectateInfoTitle.Size = UDim2.new(1, -108, 0, 18)
+spectateInfoTitle.Font = Enum.Font.Code
+spectateInfoTitle.Text = "SELECTED PLAYER INFO"
+spectateInfoTitle.TextColor3 = C.accent
+spectateInfoTitle.TextSize = 11
+spectateInfoTitle.TextXAlignment = Enum.TextXAlignment.Left
+spectateInfoTitle.ZIndex = 8
+
+local spectateInfoText = Instance.new("TextLabel")
+spectateInfoText.Name = "PlayerDetails"
+spectateInfoText.Parent = spectateInfoCard
+spectateInfoText.BackgroundTransparency = 1
+spectateInfoText.Position = UDim2.new(0, 100, 0, 30)
+spectateInfoText.Size = UDim2.new(1, -108, 0, 72)
+spectateInfoText.Font = Enum.Font.Code
+spectateInfoText.Text = "Choose a player from the list above."
+spectateInfoText.TextColor3 = C.muted
+spectateInfoText.TextSize = 10
+spectateInfoText.TextWrapped = true
+spectateInfoText.TextXAlignment = Enum.TextXAlignment.Left
+spectateInfoText.TextYAlignment = Enum.TextYAlignment.Top
+spectateInfoText.ZIndex = 8
+
+updateSpectateInfo = function(player)
+    if not player or player.Parent ~= plrs then
+        spectateAvatar.Image = ""
+        spectateInfoText.Text = "Choose a player from the list above."
+        return
+    end
+
+    spectateInfoText.Text = "Username: @" .. player.Name
+        .. "\nDisplay Name: " .. player.DisplayName
+        .. "\nUser ID: " .. tostring(player.UserId)
+
+    task.spawn(function()
+        local ok, imageUrl = pcall(function()
+            local content, _isReady = plrs:GetUserThumbnailAsync(
+                player.UserId,
+                Enum.ThumbnailType.AvatarThumbnail,
+                Enum.ThumbnailSize.Size150x150
+            )
+            return content
+        end)
+        -- Do not let a delayed thumbnail overwrite the newly selected player's avatar.
+        if ok and selectedSpectatePlayer == player and player.Parent == plrs then
+            spectateAvatar.Image = imageUrl
+        end
+    end)
+end
+
 refreshSpectatePlayers()
+updateSpectateInfo(selectedSpectatePlayer)
 plrs.PlayerAdded:Connect(refreshSpectatePlayers)
 plrs.PlayerRemoving:Connect(function(player)
-    if player == selectedSpectatePlayer then selectedSpectatePlayer = nil end
+    if player == selectedSpectatePlayer then
+        selectedSpectatePlayer = nil
+        updateSpectateInfo(nil)
+    end
     if player == spectateTargetPlayer then stopSpectating() end
     refreshSpectatePlayers()
 end)
