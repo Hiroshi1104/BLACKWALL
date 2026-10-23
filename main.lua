@@ -924,7 +924,7 @@ spectateInfoTitle.Name = "InfoTitle"
 spectateInfoTitle.Parent = spectateInfoCard
 spectateInfoTitle.BackgroundTransparency = 1
 spectateInfoTitle.Position = UDim2.new(0, 100, 0, 8)
-spectateInfoTitle.Size = UDim2.new(1, -190, 0, 20)
+spectateInfoTitle.Size = UDim2.new(1, -180, 0, 20)
 spectateInfoTitle.Font = Enum.Font.Code
 spectateInfoTitle.Text = "SELECTED PLAYER INFO"
 spectateInfoTitle.TextColor3 = C.accent
@@ -950,16 +950,16 @@ spectateInfoText.ZIndex = 8
 local spectateCopyButton = Instance.new("TextButton")
 spectateCopyButton.Name = "CopyPlayerInfo"
 spectateCopyButton.Parent = spectateInfoCard
-spectateCopyButton.Position = UDim2.new(1, -78, 0, 36)
-spectateCopyButton.Size = UDim2.new(0, 68, 0, 30)
-spectateCopyButton.BackgroundColor3 = C.panel2
+spectateCopyButton.Position = UDim2.new(1, -76, 0, 7)
+spectateCopyButton.Size = UDim2.new(0, 66, 0, 24)
+spectateCopyButton.BackgroundColor3 = C.accent
 spectateCopyButton.BorderSizePixel = 0
 spectateCopyButton.AutoButtonColor = true
 spectateCopyButton.Font = Enum.Font.Code
 spectateCopyButton.Text = "COPY"
-spectateCopyButton.TextColor3 = C.text
-spectateCopyButton.TextSize = 12
-spectateCopyButton.ZIndex = 9
+spectateCopyButton.TextColor3 = C.bg
+spectateCopyButton.TextSize = 13
+spectateCopyButton.ZIndex = 20
 corner(spectateCopyButton, 2)
 stroke(spectateCopyButton, C.outline, 0.12, 1)
 
