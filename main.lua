@@ -10,6 +10,22 @@ local cam = ws.CurrentCamera
 local lplr = plrs.LocalPlayer
 
 local flySpeed = 55
+local HttpService = game:GetService("HttpService")
+local settingsFile = "HRSH_MenuSettings.json"
+local loadedSettings = {}
+local function loadSettings()
+    if type(isfile) == "function" and type(readfile) == "function" then
+        local ok, exists = pcall(isfile, settingsFile)
+        if ok and exists then
+            local readOk, raw = pcall(readfile, settingsFile)
+            if readOk and type(raw) == "string" then
+                local decodeOk, data = pcall(function() return HttpService:JSONDecode(raw) end)
+                if decodeOk and type(data) == "table" then loadedSettings = data end
+            end
+        end
+    end
+end
+loadSettings()
 
 local toggles = {
     AimAssist = false,
@@ -58,6 +74,30 @@ local hitboxCfg = {
     trans = 0.7,
     refreshRate = 1
 }
+
+-- Restore only known, serializable settings; preserve defaults for missing/invalid values.
+if type(loadedSettings.toggles) == "table" then
+    for key, value in pairs(loadedSettings.toggles) do
+        if toggles[key] ~= nil and type(value) == "boolean" then toggles[key] = value end
+    end
+end
+if type(loadedSettings.cfg) == "table" then
+    for key, value in pairs(loadedSettings.cfg) do
+        if type(cfg[key]) == "number" and type(value) == "number" then cfg[key] = value end
+    end
+end
+if type(loadedSettings.hitboxSize) == "number" then
+    local v = math.clamp(loadedSettings.hitboxSize, 1, 20)
+    hitboxCfg.size = Vector3.new(v, v, v)
+end
+if type(loadedSettings.flySpeed) == "number" then flySpeed = math.clamp(loadedSettings.flySpeed, 1, 200) end
+
+local function saveSettings()
+    if type(writefile) ~= "function" then return end
+    local payload = { toggles = toggles, cfg = cfg, hitboxSize = hitboxCfg.size.X, flySpeed = flySpeed }
+    local ok, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
+    if ok then pcall(writefile, settingsFile, encoded) end
+end
 
 -- UI ONLY: refreshed HRSH interface. Feature logic below this block is unchanged.
 local oldGui = cg:FindFirstChild("OmniMenu")
@@ -402,6 +442,7 @@ local function createToggle(name, key)
     b.MouseLeave:Connect(paint)
     b.MouseButton1Click:Connect(function()
         toggles[key] = not toggles[key]
+        saveSettings()
         paint()
         if key == "ESP" and not toggles.ESP then
             for _, v in ipairs(ws:GetDescendants()) do
@@ -490,6 +531,7 @@ local function createSlider(name, minV, maxV, def, cb)
         thumb.Position = UDim2.new(ratio, 0, 0.5, 0)
         valueBox.Text = tostring(val)
         if cb then cb(val) end
+        saveSettings()
     end
     back.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
