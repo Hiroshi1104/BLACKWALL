@@ -614,16 +614,19 @@ createSection("[ MOVEMENT SETTINGS ]")
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
 
--- Dedicated Teleport tab with a visible, refreshable player list.
+-- Dedicated Teleport tab with a clickable, refreshable player list.
 setTab("Teleport")
 createSection("[ SELECT PLAYER ]")
+
 local selectedTeleportPlayer = nil
+local teleportPlayerRows = {}
+
 local teleportPlayerList = Instance.new("Frame")
 teleportPlayerList.Name = "TeleportPlayerList"
 teleportPlayerList.Parent = scroll
 teleportPlayerList.BackgroundColor3 = C.panel
 teleportPlayerList.BorderSizePixel = 0
-teleportPlayerList.Size = UDim2.new(1, -20, 0, 180)
+teleportPlayerList.Size = UDim2.new(1, -20, 0, 190)
 teleportPlayerList.ZIndex = 7
 corner(teleportPlayerList, 2)
 stroke(teleportPlayerList, C.outline, 0.12, 1)
@@ -641,85 +644,157 @@ playerListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 playerListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 playerListScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 playerListScroll.ZIndex = 8
+
 local playerListLayout = Instance.new("UIListLayout")
 playerListLayout.Parent = playerListScroll
 playerListLayout.Padding = UDim.new(0, 3)
-playerListLayout.SortOrder = Enum.SortOrder.Name
+playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local selectedTeleportLabel = Instance.new("TextLabel")
+selectedTeleportLabel.Name = "SelectedPlayerLabel"
+selectedTeleportLabel.Parent = scroll
+selectedTeleportLabel.BackgroundColor3 = C.panel2
+selectedTeleportLabel.BorderSizePixel = 0
+selectedTeleportLabel.Size = UDim2.new(1, -20, 0, 30)
+selectedTeleportLabel.Font = Enum.Font.Code
+selectedTeleportLabel.Text = "SELECTED: NONE"
+selectedTeleportLabel.TextColor3 = C.muted
+selectedTeleportLabel.TextSize = 11
+selectedTeleportLabel.TextTruncate = Enum.TextTruncate.AtEnd
+selectedTeleportLabel.ZIndex = 7
+corner(selectedTeleportLabel, 2)
 
 local function getTeleportTargets()
     local targets = {}
     for _, player in ipairs(plrs:GetPlayers()) do
-        if player ~= lplr and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        if player ~= lplr then
             table.insert(targets, player)
         end
     end
-    table.sort(targets, function(a, b) return a.Name:lower() < b.Name:lower() end)
+
+    table.sort(targets, function(a, b)
+        return a.Name:lower() < b.Name:lower()
+    end)
     return targets
 end
 
 local function refreshTeleportPlayers()
-    for _, child in ipairs(playerListScroll:GetChildren()) do
-        if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+    for _, row in ipairs(teleportPlayerRows) do
+        row:Destroy()
     end
+    table.clear(teleportPlayerRows)
+
     local targets = getTeleportTargets()
+    local selectionValid = false
+    for _, player in ipairs(targets) do
+        if player == selectedTeleportPlayer then
+            selectionValid = true
+            break
+        end
+    end
+    if not selectionValid then
+        selectedTeleportPlayer = nil
+    end
+
+    if selectedTeleportPlayer then
+        selectedTeleportLabel.Text = "SELECTED: " .. selectedTeleportPlayer.Name
+        selectedTeleportLabel.TextColor3 = C.trueState
+    else
+        selectedTeleportLabel.Text = "SELECTED: NONE"
+        selectedTeleportLabel.TextColor3 = C.muted
+    end
+
     if #targets == 0 then
         local empty = Instance.new("TextLabel")
+        empty.Name = "EmptyPlayerList"
         empty.Parent = playerListScroll
+        empty.LayoutOrder = 1
         empty.Size = UDim2.new(1, -4, 0, 30)
         empty.BackgroundTransparency = 1
         empty.Font = Enum.Font.Code
-        empty.Text = "NO PLAYERS AVAILABLE"
+        empty.Text = "NO OTHER PLAYERS FOUND"
         empty.TextColor3 = C.muted
-        empty.TextSize = 12
+        empty.TextSize = 11
         empty.ZIndex = 9
-        selectedTeleportPlayer = nil
+        table.insert(teleportPlayerRows, empty)
         return
     end
-    local selectionStillValid = false
-    for _, player in ipairs(targets) do
-        if player == selectedTeleportPlayer then selectionStillValid = true end
+
+    for index, player in ipairs(targets) do
+        local isSelected = player == selectedTeleportPlayer
         local item = Instance.new("TextButton")
         item.Name = "Player_" .. player.UserId
         item.Parent = playerListScroll
+        item.LayoutOrder = index
         item.Size = UDim2.new(1, -4, 0, 30)
-        item.BackgroundColor3 = player == selectedTeleportPlayer and C.panel2 or C.bg
+        item.BackgroundColor3 = isSelected and C.panel2 or C.bg
         item.BorderSizePixel = 0
         item.AutoButtonColor = false
         item.Font = Enum.Font.Code
-        item.Text = (player == selectedTeleportPlayer and ">  " or "   ") .. player.Name .. "  (@" .. player.DisplayName .. ")"
-        item.TextColor3 = player == selectedTeleportPlayer and C.trueState or C.text
+        item.Text = (isSelected and ">  " or "   ") .. player.Name
+            .. "  (@" .. player.DisplayName .. ")"
+        item.TextColor3 = isSelected and C.trueState or C.text
         item.TextSize = 11
         item.TextXAlignment = Enum.TextXAlignment.Left
+        item.TextTruncate = Enum.TextTruncate.AtEnd
         item.ZIndex = 9
         corner(item, 2)
+
         item.MouseButton1Click:Connect(function()
+            if player.Parent ~= plrs then
+                refreshTeleportPlayers()
+                return
+            end
             selectedTeleportPlayer = player
             refreshTeleportPlayers()
         end)
+
+        item.MouseEnter:Connect(function()
+            if player ~= selectedTeleportPlayer then
+                item.BackgroundColor3 = C.panel2
+            end
+        end)
+        item.MouseLeave:Connect(function()
+            item.BackgroundColor3 =
+                player == selectedTeleportPlayer and C.panel2 or C.bg
+        end)
+
+        table.insert(teleportPlayerRows, item)
     end
-    if not selectionStillValid then selectedTeleportPlayer = nil end
 end
 
 local refreshPlayersButton = createActionButton("Refresh Player List", refreshTeleportPlayers)
-refreshPlayersButton.LayoutOrder = 2
+refreshPlayersButton.LayoutOrder = 3
 refreshTeleportPlayers()
+
 plrs.PlayerAdded:Connect(refreshTeleportPlayers)
 plrs.PlayerRemoving:Connect(function(player)
-    if player == selectedTeleportPlayer then selectedTeleportPlayer = nil end
+    if player == selectedTeleportPlayer then
+        selectedTeleportPlayer = nil
+    end
     refreshTeleportPlayers()
 end)
 
 createActionButton("Teleport to Selected Player", function()
-    if not selectedTeleportPlayer or selectedTeleportPlayer.Parent ~= plrs then
+    local target = selectedTeleportPlayer
+    if not target or target.Parent ~= plrs then
         error("Select a player from the list first")
     end
-    local targetCharacter = selectedTeleportPlayer.Character
-    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+    local targetCharacter = target.Character
+    local targetRoot = targetCharacter
+        and targetCharacter:FindFirstChild("HumanoidRootPart")
     local character = lplr.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not targetRoot then error("Target character is unavailable") end
-    if not root or not humanoid or humanoid.Health <= 0 then error("Your character is unavailable") end
+
+    if not targetRoot then
+        error("Target character is unavailable")
+    end
+    if not root or not humanoid or humanoid.Health <= 0 then
+        error("Your character is unavailable")
+    end
+
     root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
 end)
 
