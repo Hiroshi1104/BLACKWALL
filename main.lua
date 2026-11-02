@@ -1139,6 +1139,54 @@ createActionButton("Infinite Reserve Ammo", function()
     if applied == 0 then error("No reserve ammo attributes applied") end
 end)
 
+-- ACS weapon tuning: apply to every carried/equipped tool with ACS_Settings.
+local function updateACSSettings(changes)
+    local tools = getPlayerTools()
+    if #tools == 0 then error("No weapons/tools found in Backpack or Character") end
+
+    local applied, missing = 0, 0
+    for _, tool in ipairs(tools) do
+        local settingsModule = tool:FindFirstChild("ACS_Settings")
+        if settingsModule and settingsModule:IsA("ModuleScript") then
+            local ok, settings = pcall(require, settingsModule)
+            if ok and type(settings) == "table" then
+                local writeOk = pcall(function()
+                    for key, value in pairs(changes) do
+                        settings[key] = value
+                    end
+                end)
+                if writeOk then applied += 1 else missing += 1 end
+            else
+                missing += 1
+            end
+        else
+            missing += 1
+        end
+    end
+
+    if applied == 0 then
+        error("No accessible ACS_Settings module found on carried weapons")
+    end
+    if missing > 0 then
+        warn("[BLACKWALL] Updated " .. applied .. " weapon(s); " .. missing .. " tool(s) had no accessible ACS_Settings")
+    end
+end
+
+createSection("[ WEAPON MODIFIERS ]")
+createActionButton("No Recoil", function()
+    updateACSSettings({
+        Kickback = 0,
+        MaxRecoilPower = 0,
+        MinRecoilPower = 0,
+    })
+end)
+createActionButton("Max Damage", function()
+    updateACSSettings({ MinDamage = math.huge })
+end)
+createActionButton("No Spread", function()
+    updateACSSettings({ MaxSpread = 0 })
+end)
+
 -- Fire type: set the client-side ACS shoot-type attribute on carried/equipped tools.
 -- Value 3 matches the ShootType = 3 configuration shown by the user.
 createSection("[ FIRE TYPE ]")
