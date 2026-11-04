@@ -66,6 +66,9 @@ local cfg = {
     scanRate = 0.5,
     speed = 16,
     gatherDistance = 8,
+    genFillOpacity = 0.5, -- Generator ESP fill opacity (0 = invisible, 1 = solid)
+    genOutlineOpacity = 1, -- Generator ESP outline opacity
+    genHue = 33, -- Generator ESP color hue in degrees (33 = orange)
 }
 
 -- Restore only known, serializable settings; preserve defaults for missing/invalid values.
@@ -92,6 +95,9 @@ local function saveSettings()
         fov = cfg.fov,
         speed = cfg.speed,
         gatherDistance = cfg.gatherDistance,
+        genFillOpacity = cfg.genFillOpacity,
+        genOutlineOpacity = cfg.genOutlineOpacity,
+        genHue = cfg.genHue,
     }
     local payload = {
         toggles = toggles,
@@ -296,7 +302,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Movement", "Overwatch", "Settings"}) do
+for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Settings"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -326,7 +332,7 @@ for order, name in ipairs({"Main", "Movement", "Overwatch", "Settings"}) do
     button.Name = name .. "Tab"
     button.Parent = tabBar
     button.LayoutOrder = order
-    local tabWidths = {Main = 48, Movement = 64, Overwatch = 78, Settings = 56}
+    local tabWidths = {Main = 48, Visual = 54, Movement = 64, Overwatch = 78, Settings = 56}
     button.Size = UDim2.new(0, tabWidths[name] or 60, 1, 0)
     button.BackgroundColor3 = C.panel
     button.BorderSizePixel = 0
@@ -572,12 +578,6 @@ end
 setTab("Main")
 createSection("[ VISUALS & UTILITY ]")
 createToggle("Aim Assist", "AimAssist")
-createToggle("NPC ESP", "ESP")
-createToggle("Enemy HP", "EnemyHP")
-createToggle("Player ESP", "PlayerESP")
-createToggle("My HP", "SelfHP")
-createToggle("Item ESP", "ItemESP")
-createToggle("Generator ESP", "GeneratorESP")
 createToggle("Crosshair", "Crosshair")
 createToggle("Fullbright", "Fullbright")
 createToggle("Instant Interact", "InstantInteract")
@@ -587,6 +587,20 @@ createSection("[ AIM SETTINGS ]")
 createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end)
 createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
 createSlider("Gather Distance", 1, 30, cfg.gatherDistance, function(v) cfg.gatherDistance = v end)
+
+-- Visual: every ESP / overlay / on-screen display option lives here.
+setTab("Visual")
+createSection("[ VISUALS ]")
+createToggle("NPC ESP", "ESP")
+createToggle("Enemy HP", "EnemyHP")
+createToggle("Player ESP", "PlayerESP")
+createToggle("My HP", "SelfHP")
+createToggle("Item ESP", "ItemESP")
+createToggle("Generator ESP", "GeneratorESP")
+createSection("[ GENERATOR ESP SETTINGS ]")
+createSlider("Fill Opacity", 0, 1, cfg.genFillOpacity, function(v) cfg.genFillOpacity = v end)
+createSlider("Outline Opacity", 0, 1, cfg.genOutlineOpacity, function(v) cfg.genOutlineOpacity = v end)
+createSlider("Color Hue", 0, 360, cfg.genHue, function(v) cfg.genHue = v end)
 
 -- Movement: movement toggles and speed controls.
 setTab("Movement")
@@ -2555,7 +2569,9 @@ end)
 
 -- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
-    local GENERATOR_COLOR = Color3.fromRGB(255, 140, 0)
+    local function getGeneratorColor()
+        return Color3.fromHSV(math.clamp(cfg.genHue, 0, 360) / 360, 1, 1)
+    end
 
     local function getGeneratorAnchor(model)
         if model.PrimaryPart then return model.PrimaryPart end
@@ -2571,13 +2587,14 @@ do
             hl = Instance.new("Highlight")
             hl.Name = "GeneratorHighlight"
             hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-            hl.FillTransparency = 0.5
-            hl.OutlineTransparency = 0
             hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
             hl.Parent = model
         end
         hl.Adornee = model
-        hl.FillColor = GENERATOR_COLOR
+        local genColor = getGeneratorColor()
+        hl.FillColor = genColor
+        hl.FillTransparency = 1 - math.clamp(cfg.genFillOpacity, 0, 1)
+        hl.OutlineTransparency = 1 - math.clamp(cfg.genOutlineOpacity, 0, 1)
         hl.Enabled = true
 
         -- Info label: name + distance, like Player ESP
@@ -2602,7 +2619,7 @@ do
             label.BackgroundTransparency = 1
             label.Font = Enum.Font.GothamBold
             label.TextSize = 13
-            label.TextColor3 = GENERATOR_COLOR
+            label.TextColor3 = Color3.fromRGB(255, 140, 0)
             label.TextStrokeTransparency = 0
             label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
             label.Parent = infoGui
@@ -2612,6 +2629,7 @@ do
 
         local label = infoGui:FindFirstChild("Info")
         if label then
+            label.TextColor3 = genColor
             local myChar = lplr.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             local distance = myRoot and math.floor((myRoot.Position - anchor.Position).Magnitude + 0.5) or 0
