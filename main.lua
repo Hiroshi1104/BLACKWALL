@@ -598,21 +598,6 @@ setTab("Overwatch")
 local selectedSpectatePlayer = nil
 local updateSpectateInfo
 
-createActionButton("Teleport to Selected Player", function()
-    local player = selectedSpectatePlayer
-    if not player or player.Parent ~= plrs then
-        error("Select a player from the list first")
-    end
-    local targetCharacter = player.Character
-    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
-    local character = lplr.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not targetRoot then error("Target character is unavailable") end
-    if not root or not humanoid or humanoid.Health <= 0 then error("Your character is unavailable") end
-    root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
-end)
-
 -- The same list below drives both teleport and spectate actions.
 createSection("[ PLAYER LIST ]")
 
@@ -841,6 +826,21 @@ local function refreshSpectatePlayers()
 end
 
 createActionButton("Refresh Player List", refreshSpectatePlayers)
+createActionButton("Teleport to Selected Player", function()
+    local player = selectedSpectatePlayer
+    if not player or player.Parent ~= plrs then
+        error("Select a player from the list first")
+    end
+    local targetCharacter = player.Character
+    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+    local character = lplr.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not targetRoot then error("Target character is unavailable") end
+    if not root or not humanoid or humanoid.Health <= 0 then error("Your character is unavailable") end
+    root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
+end)
+
 createActionButton("Spectate Selected Player", function()
     startSpectating(selectedSpectatePlayer)
 end)
@@ -901,12 +901,22 @@ spectateInfoText.ZIndex = 8
 
 -- Interactive 3D preview of the currently selected player's avatar.
 createSection("[ 3D AVATAR PREVIEW ]")
+-- Wrapper lets the zoom controls render as normal 2D UI above the 3D viewport.
+local avatarPreviewContainer = Instance.new("Frame")
+avatarPreviewContainer.Name = "AvatarPreviewContainer"
+avatarPreviewContainer.Parent = scroll
+avatarPreviewContainer.BackgroundTransparency = 1
+avatarPreviewContainer.BorderSizePixel = 0
+avatarPreviewContainer.Size = UDim2.new(1, -20, 0, 220)
+avatarPreviewContainer.ZIndex = 7
+
 local spectateViewport = Instance.new("ViewportFrame")
 spectateViewport.Name = "SelectedPlayer3DAvatar"
-spectateViewport.Parent = scroll
+spectateViewport.Parent = avatarPreviewContainer
+spectateViewport.Position = UDim2.new(0, 0, 0, 0)
 spectateViewport.BackgroundColor3 = C.bg
 spectateViewport.BorderSizePixel = 0
-spectateViewport.Size = UDim2.new(1, -20, 0, 220)
+spectateViewport.Size = UDim2.new(1, 0, 1, 0)
 spectateViewport.ZIndex = 7
 spectateViewport.Active = true
 spectateViewport.Ambient = Color3.fromRGB(170, 170, 170)
@@ -937,7 +947,7 @@ local avatarZoomDragging = false
 
 local avatarZoomPanel = Instance.new("Frame")
 avatarZoomPanel.Name = "AvatarZoomControl"
-avatarZoomPanel.Parent = spectateViewport
+avatarZoomPanel.Parent = avatarPreviewContainer
 avatarZoomPanel.AnchorPoint = Vector2.new(0.5, 1)
 avatarZoomPanel.Position = UDim2.new(0.5, 0, 1, -7)
 avatarZoomPanel.Size = UDim2.new(1, -18, 0, 32)
