@@ -162,7 +162,7 @@ main.BorderSizePixel = 0
 main.Position = UDim2.new(0.035, 0, 0.12, 0)
 main.Size = UDim2.new(0, 390, 0, 560)
 main.Active = true
-main.Draggable = true
+main.Draggable = false
 main.ClipsDescendants = true
 corner(main, 2)
 stroke(main, C.outline, 0.05, 1)
@@ -242,6 +242,36 @@ tabLayout.FillDirection = Enum.FillDirection.Horizontal
 tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 tabLayout.Padding = UDim.new(0, 5)
 tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+
+-- Only the title/header strip and unused tab-bar background can drag the menu.
+-- Content controls (including the 3D avatar viewport) never initiate window dragging.
+local menuDragging = false
+local menuDragStart = nil
+local menuStartPosition = nil
+local function beginMenuDrag(input)
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    menuDragging = true
+    menuDragStart = input.Position
+    menuStartPosition = main.Position
+end
+header.InputBegan:Connect(beginMenuDrag)
+uis.InputChanged:Connect(function(input)
+    if menuDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - menuDragStart
+        main.Position = UDim2.new(
+            menuStartPosition.X.Scale, menuStartPosition.X.Offset + delta.X,
+            menuStartPosition.Y.Scale, menuStartPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+uis.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        menuDragging = false
+    end
+end)
 
 local tabPages = {}
 local tabButtons = {}
@@ -894,9 +924,11 @@ spectateViewport.CurrentCamera = avatarViewportCamera
 
 local avatarPreviewModel = nil
 local avatarPreviewYaw = math.rad(180)
+local avatarPreviewPitch = math.rad(-5)
 local avatarPreviewDistance = 7
 local avatarPreviewDragging = false
 local avatarPreviewLastX = 0
+local avatarPreviewLastY = 0
 local avatarPreviewConnections = {}
 
 local function clearAvatarPreview()
@@ -910,7 +942,9 @@ local function updateAvatarPreviewCamera()
     if not avatarPreviewModel then return end
     local boxCFrame, boxSize = avatarPreviewModel:GetBoundingBox()
     local focus = boxCFrame.Position + Vector3.new(0, boxSize.Y * 0.05, 0)
-    local rotation = CFrame.Angles(0, avatarPreviewYaw, 0)
+    -- Full orbit: yaw travels continuously through 360 degrees; pitch allows
+    -- looking above and below the avatar without flipping the camera upside down.
+    local rotation = CFrame.fromOrientation(avatarPreviewPitch, avatarPreviewYaw, 0)
     local offset = rotation:VectorToWorldSpace(Vector3.new(0, 0, avatarPreviewDistance))
     avatarViewportCamera.CFrame = CFrame.lookAt(focus + offset, focus)
 end
@@ -918,6 +952,7 @@ end
 local function showAvatarPreview(player)
     clearAvatarPreview()
     avatarPreviewYaw = math.rad(180)
+    avatarPreviewPitch = math.rad(-5)
     avatarPreviewDistance = 7
     if not player or player.Parent ~= plrs then return end
 
@@ -958,23 +993,33 @@ local function showAvatarPreview(player)
     end)
 end
 
--- Drag horizontally to rotate; use the mouse wheel to zoom the 3D preview.
+-- Click-drag in both axes for a complete 3D orbit; wheel zooms while the
+-- pointer is over the viewport. Releasing anywhere ends the drag cleanly.
 spectateViewport.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
         avatarPreviewDragging = true
-        avatarPreviewLastX = uis:GetMouseLocation().X
+        local mouse = uis:GetMouseLocation()
+        avatarPreviewLastX = mouse.X
+        avatarPreviewLastY = mouse.Y
     end
 end)
-spectateViewport.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+uis.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
         avatarPreviewDragging = false
     end
 end)
 table.insert(avatarPreviewConnections, uis.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement and avatarPreviewDragging then
-        local mouseX = uis:GetMouseLocation().X
-        avatarPreviewYaw = avatarPreviewYaw - (mouseX - avatarPreviewLastX) * 0.012
-        avatarPreviewLastX = mouseX
+    if (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) and avatarPreviewDragging then
+        local mouse = uis:GetMouseLocation()
+        local deltaX = mouse.X - avatarPreviewLastX
+        local deltaY = mouse.Y - avatarPreviewLastY
+        avatarPreviewYaw = avatarPreviewYaw - deltaX * 0.012
+        avatarPreviewPitch = math.clamp(avatarPreviewPitch - deltaY * 0.01, math.rad(-80), math.rad(80))
+        avatarPreviewLastX = mouse.X
+        avatarPreviewLastY = mouse.Y
         updateAvatarPreviewCamera()
     elseif input.UserInputType == Enum.UserInputType.MouseWheel then
         local mouse = uis:GetMouseLocation()
