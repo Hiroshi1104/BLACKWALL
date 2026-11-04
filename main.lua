@@ -66,6 +66,10 @@ local cfg = {
     scanRate = 0.5,
     speed = 16,
     gatherDistance = 8,
+    npcFillOpacity = 0.5, -- NPC ESP fill opacity
+    npcOutlineOpacity = 1, -- NPC ESP outline opacity
+    playerFillOpacity = 0.5, -- Player ESP fill opacity
+    playerOutlineOpacity = 1, -- Player ESP outline opacity
     genFillOpacity = 0.5, -- Generator ESP fill opacity (0 = invisible, 1 = solid)
     genOutlineOpacity = 1, -- Generator ESP outline opacity
     genHue = 33, -- Generator ESP color hue in degrees (33 = orange)
@@ -95,6 +99,10 @@ local function saveSettings()
         fov = cfg.fov,
         speed = cfg.speed,
         gatherDistance = cfg.gatherDistance,
+        npcFillOpacity = cfg.npcFillOpacity,
+        npcOutlineOpacity = cfg.npcOutlineOpacity,
+        playerFillOpacity = cfg.playerFillOpacity,
+        playerOutlineOpacity = cfg.playerOutlineOpacity,
         genFillOpacity = cfg.genFillOpacity,
         genOutlineOpacity = cfg.genOutlineOpacity,
         genHue = cfg.genHue,
@@ -597,6 +605,12 @@ createToggle("Player ESP", "PlayerESP")
 createToggle("My HP", "SelfHP")
 createToggle("Item ESP", "ItemESP")
 createToggle("Generator ESP", "GeneratorESP")
+createSection("[ NPC ESP SETTINGS ]")
+createSlider("NPC Fill Opacity", 0, 1, cfg.npcFillOpacity, function(v) cfg.npcFillOpacity = v end)
+createSlider("NPC Outline Opacity", 0, 1, cfg.npcOutlineOpacity, function(v) cfg.npcOutlineOpacity = v end)
+createSection("[ PLAYER ESP SETTINGS ]")
+createSlider("Player Fill Opacity", 0, 1, cfg.playerFillOpacity, function(v) cfg.playerFillOpacity = v end)
+createSlider("Player Outline Opacity", 0, 1, cfg.playerOutlineOpacity, function(v) cfg.playerOutlineOpacity = v end)
 createSection("[ GENERATOR ESP SETTINGS ]")
 createSlider("Fill Opacity", 0, 1, cfg.genFillOpacity, function(v) cfg.genFillOpacity = v end)
 createSlider("Outline Opacity", 0, 1, cfg.genOutlineOpacity, function(v) cfg.genOutlineOpacity = v end)
@@ -1420,8 +1434,8 @@ local function applyEsp(model)
     end
     hl.FillColor = cfg.espFill
     hl.OutlineColor = cfg.espOutline
-    hl.FillTransparency = cfg.fillTrans
-    hl.OutlineTransparency = cfg.outTrans
+    hl.FillTransparency = 1 - math.clamp(cfg.npcFillOpacity, 0, 1)
+    hl.OutlineTransparency = 1 - math.clamp(cfg.npcOutlineOpacity, 0, 1)
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 end
 
@@ -1507,13 +1521,13 @@ local function addPlayerInfoESP(plr, char)
         hl = Instance.new("Highlight")
         hl.Name = "PlayerHighlight"
         hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-        hl.FillTransparency = 0.5
-        hl.OutlineTransparency = 0
         hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         hl.Parent = char
     end
     hl.Adornee = char
     hl.Enabled = true
+    hl.FillTransparency = 1 - math.clamp(cfg.playerFillOpacity, 0, 1)
+    hl.OutlineTransparency = 1 - math.clamp(cfg.playerOutlineOpacity, 0, 1)
 
     local function getTeamKey(player)
         if player.Team then return "team:" .. player.Team:GetFullName() end
