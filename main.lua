@@ -36,7 +36,6 @@ local toggles = {
     Crosshair = false,
     Fly = false,
     Noclip = false,
-    Hitboxes = false,
     Fullbright = false,
     InstantInteract = false,
     DelCorpses = false,
@@ -65,16 +64,6 @@ local cfg = {
     gatherDistance = 8,
 }
 
-local hitboxCfg = {
-    enabled = true,
-    part = "Head",
-    size = Vector3.new(2, 2, 2),
-    show = true,
-    color = BrickColor.new("Bright red"),
-    trans = 0.7,
-    refreshRate = 1
-}
-
 -- Restore only known, serializable settings; preserve defaults for missing/invalid values.
 if type(loadedSettings.toggles) == "table" then
     for key, value in pairs(loadedSettings.toggles) do
@@ -85,10 +74,6 @@ if type(loadedSettings.cfg) == "table" then
     for key, value in pairs(loadedSettings.cfg) do
         if type(cfg[key]) == "number" and type(value) == "number" then cfg[key] = value end
     end
-end
-if type(loadedSettings.hitboxSize) == "number" then
-    local v = math.clamp(loadedSettings.hitboxSize, 1, 20)
-    hitboxCfg.size = Vector3.new(v, v, v)
 end
 if type(loadedSettings.flySpeed) == "number" then flySpeed = math.clamp(loadedSettings.flySpeed, 1, 200) end
 
@@ -106,7 +91,6 @@ local function saveSettings()
     local payload = {
         toggles = toggles,
         cfg = numericCfg,
-        hitboxSize = hitboxCfg.size.X,
         flySpeed = flySpeed,
     }
 
@@ -277,7 +261,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Movement", "Teleport", "Spectate", "Gun", "Settings"}) do
+for order, name in ipairs({"Main", "Movement", "Overwatch", "Settings"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -307,7 +291,7 @@ for order, name in ipairs({"Main", "Movement", "Teleport", "Spectate", "Gun", "S
     button.Name = name .. "Tab"
     button.Parent = tabBar
     button.LayoutOrder = order
-    local tabWidths = {Main = 48, Movement = 64, Teleport = 60, Spectate = 60, Gun = 42, Settings = 56}
+    local tabWidths = {Main = 48, Movement = 64, Overwatch = 78, Settings = 56}
     button.Size = UDim2.new(0, tabWidths[name] or 60, 1, 0)
     button.BackgroundColor3 = C.panel
     button.BorderSizePixel = 0
@@ -381,40 +365,6 @@ local function createActionButton(name, callback)
         end)
     end)
     return b
-end
-
-local function getPlayerTools()
-    local found, seen = {}, {}
-    local function scan(container)
-        if not container then return end
-        for _, item in ipairs(container:GetChildren()) do
-            if item:IsA("Tool") and not seen[item] then
-                seen[item] = true
-                table.insert(found, item)
-            end
-        end
-    end
-    scan(lplr:FindFirstChildOfClass("Backpack"))
-    scan(lplr.Character)
-    return found
-end
-
-local function setAmmoAttribute(attributeName, requestedValue)
-    local tools = getPlayerTools()
-    if #tools == 0 then error("No weapons/tools found in Backpack or Character") end
-    local applied, failed = 0, 0
-    for _, tool in ipairs(tools) do
-        local ok = pcall(function()
-            tool:SetAttribute(attributeName, requestedValue)
-        end)
-        if ok then
-            applied += 1
-        else
-            failed += 1
-        end
-    end
-    if applied == 0 then error("Could not set the ammo attribute") end
-    return applied, failed
 end
 
 local function createToggle(name, key)
@@ -583,7 +533,7 @@ local function createSlider(name, minV, maxV, def, cb)
     end)
 end
 
--- Main: ESP, targeting, hitboxes, and other visual/utility controls.
+-- Main: ESP, targeting, and other visual/utility controls.
 setTab("Main")
 createSection("[ VISUALS & UTILITY ]")
 createToggle("Aim Assist", "AimAssist")
@@ -593,15 +543,13 @@ createToggle("Player ESP", "PlayerESP")
 createToggle("My HP", "SelfHP")
 createToggle("Item ESP", "ItemESP")
 createToggle("Crosshair", "Crosshair")
-createToggle("Big Hitboxes", "Hitboxes")
 createToggle("Fullbright", "Fullbright")
 createToggle("Instant Interact", "InstantInteract")
 createToggle("Del Corpses", "DelCorpses")
 createToggle("Gather NPCs", "GatherNPCs")
-createSection("[ AIM / HITBOX SETTINGS ]")
+createSection("[ AIM SETTINGS ]")
 createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end)
 createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
-createSlider("Hitbox Size", 1, 20, hitboxCfg.size.X, function(v) hitboxCfg.size = Vector3.new(v, v, v) end)
 createSlider("Gather Distance", 1, 30, cfg.gatherDistance, function(v) cfg.gatherDistance = v end)
 
 -- Movement: movement toggles and speed controls.
@@ -615,8 +563,8 @@ createSection("[ MOVEMENT SETTINGS ]")
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
 
--- Dedicated Teleport tab with a visible, refreshable player list.
-setTab("Teleport")
+-- Overwatch: player selection, teleport, spectate, and player information.
+setTab("Overwatch")
 createSection("[ SELECT PLAYER ]")
 local selectedTeleportPlayer = nil
 local teleportPlayerList = Instance.new("Frame")
@@ -724,9 +672,9 @@ createActionButton("Teleport to Selected Player", function()
     root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
 end)
 
--- Spectate tab: refreshable player list and a Scriptable camera that does not
--- run Roblox's normal camera collision checks, so walls do not push the view away.
-setTab("Spectate")
+-- Spectate controls share the Overwatch page. The Scriptable camera avoids
+-- Roblox's normal camera collision checks, so walls do not push the view away.
+-- (No page switch here.)
 createSection("[ SPECTATE PLAYER ]")
 
 local selectedSpectatePlayer = nil
@@ -1101,109 +1049,7 @@ lplr.CharacterAdded:Connect(function()
     end
 end)
 
--- Gun: one-shot ammo attribute actions for tools currently in Backpack/Character.
--- math.huge is attempted first; if Roblox rejects non-finite attribute values,
--- fall back to a very large finite number.
-setTab("Gun")
-createSection("[ AMMO ]")
-createActionButton("Infinite Ammo In Gun", function()
-    local value = math.huge
-    local ok = pcall(function()
-        local tools = getPlayerTools()
-        if #tools == 0 then error("No weapons/tools found") end
-        local applied = 0
-        for _, tool in ipairs(tools) do
-            local setOk = pcall(function() tool:SetAttribute("ACSClientAmmoInGun", value) end)
-            if not setOk then
-                tool:SetAttribute("ACSClientAmmoInGun", 9e15)
-            end
-            applied += 1
-        end
-        if applied == 0 then error("No ammo attributes applied") end
-    end)
-    if not ok then
-        setAmmoAttribute("ACSClientAmmoInGun", 9e15)
-    end
-end)
-createActionButton("Infinite Reserve Ammo", function()
-    local tools = getPlayerTools()
-    if #tools == 0 then error("No weapons/tools found") end
-    local applied = 0
-    for _, tool in ipairs(tools) do
-        local ok = pcall(function() tool:SetAttribute("ACSClientStoredAmmo", math.huge) end)
-        if not ok then
-            tool:SetAttribute("ACSClientStoredAmmo", 9e15)
-        end
-        applied += 1
-    end
-    if applied == 0 then error("No reserve ammo attributes applied") end
-end)
-
--- ACS weapon tuning: apply to every carried/equipped tool with ACS_Settings.
-local function updateACSSettings(changes)
-    local tools = getPlayerTools()
-    if #tools == 0 then error("No weapons/tools found in Backpack or Character") end
-
-    local applied, missing = 0, 0
-    for _, tool in ipairs(tools) do
-        local settingsModule = tool:FindFirstChild("ACS_Settings")
-        if settingsModule and settingsModule:IsA("ModuleScript") then
-            local ok, settings = pcall(require, settingsModule)
-            if ok and type(settings) == "table" then
-                local writeOk = pcall(function()
-                    for key, value in pairs(changes) do
-                        settings[key] = value
-                    end
-                end)
-                if writeOk then applied += 1 else missing += 1 end
-            else
-                missing += 1
-            end
-        else
-            missing += 1
-        end
-    end
-
-    if applied == 0 then
-        error("No accessible ACS_Settings module found on carried weapons")
-    end
-    if missing > 0 then
-        warn("[BLACKWALL] Updated " .. applied .. " weapon(s); " .. missing .. " tool(s) had no accessible ACS_Settings")
-    end
-end
-
-createSection("[ WEAPON MODIFIERS ]")
-createActionButton("No Recoil", function()
-    updateACSSettings({
-        Kickback = 0,
-        MaxRecoilPower = 0,
-        MinRecoilPower = 0,
-    })
-end)
-createActionButton("Max Damage", function()
-    updateACSSettings({ MinDamage = math.huge })
-end)
-createActionButton("No Spread", function()
-    updateACSSettings({ MaxSpread = 0 })
-end)
-
--- Fire type: set the client-side ACS shoot-type attribute on carried/equipped tools.
--- Value 3 matches the ShootType = 3 configuration shown by the user.
-createSection("[ FIRE TYPE ]")
-createActionButton("Set Fire Type (ShootType 3)", function()
-    local tools = getPlayerTools()
-    if #tools == 0 then error("No weapons/tools found") end
-
-    local applied = 0
-    for _, tool in ipairs(tools) do
-        tool:SetAttribute("ACSClientShootType", 3)
-        applied += 1
-    end
-    if applied == 0 then error("No fire-type attributes applied") end
-end)
-
-createSection("[ NOTES ]")
-createSection("Applies once to tools in Backpack and Character")
+-- Gun tab and its obsolete weapon features have been removed.
 
 -- Settings: menu keybind and performance controls.
 setTab("Settings")
@@ -2339,64 +2185,22 @@ rs.RenderStepped:Connect(function(dt)
     end
 end)
 
--- Hitboxes
-task.spawn(function()
-    while true do
-        for _, obj in ipairs(ws:GetChildren()) do
-            if obj.Name == "MI28_Aim" then
-                local aimPart = obj:FindFirstChild(hitboxCfg.part, true)
-                if aimPart and aimPart:GetAttribute("OrigSize") then
-                    aimPart.Size = aimPart:GetAttribute("OrigSize")
-                    aimPart.Transparency = aimPart:GetAttribute("OrigTrans")
-                    aimPart.BrickColor = BrickColor.new(aimPart:GetAttribute("OrigColor"))
-                    aimPart:SetAttribute("OrigSize", nil)
-                    aimPart:SetAttribute("OrigTrans", nil)
-                    aimPart:SetAttribute("OrigColor", nil)
-                end
-                continue
-            end
-            if plrs:GetPlayerFromCharacter(obj) then continue end
-            if obj:IsA("Model") then
-                local hum = obj:FindFirstChildOfClass("Humanoid")
-                local tPart = obj:FindFirstChild(hitboxCfg.part, true)
-                local isMI28 = obj.Name:lower():find("mi28", 1, true) ~= nil
-                if not tPart and isMI28 then
-                    tPart = obj:FindFirstChild("HumanoidRootPart", true)
-                        or obj.PrimaryPart
-                        or obj:FindFirstChild("30MMBody", true)
-                        or obj:FindFirstChildWhichIsA("BasePart", true)
-                end
-                local isValidTarget = (hum and hum.Health > 0) or isMI28
-
-                if tPart then
-                    if toggles.Hitboxes and isValidTarget then
-                        if not tPart:GetAttribute("OrigSize") then
-                            tPart:SetAttribute("OrigSize", tPart.Size)
-                            tPart:SetAttribute("OrigTrans", tPart.Transparency)
-                            tPart:SetAttribute("OrigColor", tPart.BrickColor.Name)
-                        end
-                        if tPart.Size ~= hitboxCfg.size then
-                            tPart.Size = hitboxCfg.size
-                            tPart.CanCollide = false
-                            tPart.Massless = true
-                            if hitboxCfg.show then
-                                tPart.Transparency = hitboxCfg.trans
-                                tPart.BrickColor = hitboxCfg.color
-                            end
-                        end
-                    elseif not toggles.Hitboxes then
-                        if tPart:GetAttribute("OrigSize") and tPart.Size ~= tPart:GetAttribute("OrigSize") then
-                            tPart.Size = tPart:GetAttribute("OrigSize")
-                            tPart.Transparency = tPart:GetAttribute("OrigTrans")
-                            tPart.BrickColor = BrickColor.new(tPart:GetAttribute("OrigColor"))
-                        end
-                    end
-                end
-            end
-        end
-        task.wait(hitboxCfg.refreshRate)
+-- Restore any NPC parts modified by an older Big Hitboxes version.
+for _, obj in ipairs(ws:GetDescendants()) do
+    if obj:IsA("BasePart") and obj:GetAttribute("OrigSize") then
+        pcall(function()
+            obj.Size = obj:GetAttribute("OrigSize")
+            local originalTransparency = obj:GetAttribute("OrigTrans")
+            if originalTransparency ~= nil then obj.Transparency = originalTransparency end
+            local originalColor = obj:GetAttribute("OrigColor")
+            if originalColor ~= nil then obj.BrickColor = BrickColor.new(originalColor) end
+            obj:SetAttribute("OrigSize", nil)
+            obj:SetAttribute("OrigTrans", nil)
+            obj:SetAttribute("OrigColor", nil)
+        end)
     end
-end)
+end
+
 
 -- Fullbright
 lighting.Changed:Connect(function()
