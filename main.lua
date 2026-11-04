@@ -931,6 +931,85 @@ local avatarPreviewLastX = 0
 local avatarPreviewLastY = 0
 local avatarPreviewConnections = {}
 
+-- Embedded zoom slider: mouse-wheel input is left alone for menu scrolling.
+local avatarZoomMin, avatarZoomMax = 2.5, 20
+local avatarZoomDragging = false
+
+local avatarZoomPanel = Instance.new("Frame")
+avatarZoomPanel.Name = "AvatarZoomControl"
+avatarZoomPanel.Parent = spectateViewport
+avatarZoomPanel.AnchorPoint = Vector2.new(0.5, 1)
+avatarZoomPanel.Position = UDim2.new(0.5, 0, 1, -7)
+avatarZoomPanel.Size = UDim2.new(1, -18, 0, 32)
+avatarZoomPanel.BackgroundColor3 = C.panel
+avatarZoomPanel.BackgroundTransparency = 0.12
+avatarZoomPanel.BorderSizePixel = 0
+avatarZoomPanel.ZIndex = 20
+corner(avatarZoomPanel, 3)
+stroke(avatarZoomPanel, C.outline, 0.15, 1)
+
+local avatarZoomLabel = Instance.new("TextLabel")
+avatarZoomLabel.Parent = avatarZoomPanel
+avatarZoomLabel.BackgroundTransparency = 1
+avatarZoomLabel.Position = UDim2.new(0, 8, 0, 0)
+avatarZoomLabel.Size = UDim2.new(0, 42, 1, 0)
+avatarZoomLabel.Font = Enum.Font.Code
+avatarZoomLabel.Text = "ZOOM"
+avatarZoomLabel.TextColor3 = C.text
+avatarZoomLabel.TextSize = 10
+avatarZoomLabel.TextXAlignment = Enum.TextXAlignment.Left
+avatarZoomLabel.ZIndex = 21
+
+local avatarZoomValue = Instance.new("TextLabel")
+avatarZoomValue.Parent = avatarZoomPanel
+avatarZoomValue.BackgroundTransparency = 1
+avatarZoomValue.AnchorPoint = Vector2.new(1, 0)
+avatarZoomValue.Position = UDim2.new(1, -7, 0, 0)
+avatarZoomValue.Size = UDim2.new(0, 34, 1, 0)
+avatarZoomValue.Font = Enum.Font.Code
+avatarZoomValue.Text = "7.0"
+avatarZoomValue.TextColor3 = C.accent
+avatarZoomValue.TextSize = 10
+avatarZoomValue.TextXAlignment = Enum.TextXAlignment.Right
+avatarZoomValue.ZIndex = 21
+
+local avatarZoomTrack = Instance.new("TextButton")
+avatarZoomTrack.Parent = avatarZoomPanel
+avatarZoomTrack.AutoButtonColor = false
+avatarZoomTrack.Text = ""
+avatarZoomTrack.BackgroundColor3 = C.off
+avatarZoomTrack.BorderSizePixel = 0
+avatarZoomTrack.Position = UDim2.new(0, 54, 0.5, -3)
+avatarZoomTrack.Size = UDim2.new(1, -100, 0, 6)
+avatarZoomTrack.ZIndex = 21
+corner(avatarZoomTrack, 4)
+
+local avatarZoomFill = Instance.new("Frame")
+avatarZoomFill.Parent = avatarZoomTrack
+avatarZoomFill.BackgroundColor3 = C.accent
+avatarZoomFill.BorderSizePixel = 0
+avatarZoomFill.Size = UDim2.new(0.65, 0, 1, 0)
+avatarZoomFill.ZIndex = 22
+corner(avatarZoomFill, 4)
+
+local avatarZoomThumb = Instance.new("Frame")
+avatarZoomThumb.Parent = avatarZoomTrack
+avatarZoomThumb.AnchorPoint = Vector2.new(0.5, 0.5)
+avatarZoomThumb.Position = UDim2.new(0.65, 0, 0.5, 0)
+avatarZoomThumb.Size = UDim2.new(0, 11, 0, 11)
+avatarZoomThumb.BackgroundColor3 = C.text
+avatarZoomThumb.BorderSizePixel = 0
+avatarZoomThumb.ZIndex = 23
+corner(avatarZoomThumb, 8)
+stroke(avatarZoomThumb, C.accent, 0, 2)
+
+local function updateAvatarZoomSlider()
+    local ratio = math.clamp((avatarZoomMax - avatarPreviewDistance) / (avatarZoomMax - avatarZoomMin), 0, 1)
+    avatarZoomFill.Size = UDim2.new(ratio, 0, 1, 0)
+    avatarZoomThumb.Position = UDim2.new(ratio, 0, 0.5, 0)
+    avatarZoomValue.Text = string.format("%.1f", avatarPreviewDistance)
+end
+
 local function clearAvatarPreview()
     for _, child in ipairs(avatarWorld:GetChildren()) do
         child:Destroy()
@@ -949,11 +1028,20 @@ local function updateAvatarPreviewCamera()
     avatarViewportCamera.CFrame = CFrame.lookAt(focus + offset, focus)
 end
 
+local function setAvatarZoomFromX(x)
+    local width = math.max(1, avatarZoomTrack.AbsoluteSize.X)
+    local ratio = math.clamp((x - avatarZoomTrack.AbsolutePosition.X) / width, 0, 1)
+    avatarPreviewDistance = avatarZoomMax - ratio * (avatarZoomMax - avatarZoomMin)
+    updateAvatarZoomSlider()
+    updateAvatarPreviewCamera()
+end
+
 local function showAvatarPreview(player)
     clearAvatarPreview()
     avatarPreviewYaw = math.rad(180)
     avatarPreviewPitch = math.rad(-5)
     avatarPreviewDistance = 7
+    updateAvatarZoomSlider()
     if not player or player.Parent ~= plrs then return end
 
     local character = player.Character
@@ -988,46 +1076,59 @@ local function showAvatarPreview(player)
     pcall(function()
         clone:PivotTo(CFrame.new(0, 0, 0))
         local _, size = clone:GetBoundingBox()
-        avatarPreviewDistance = math.max(5, size.Magnitude * 0.85)
+        avatarPreviewDistance = math.clamp(math.max(5, size.Magnitude * 0.85), avatarZoomMin, avatarZoomMax)
+        updateAvatarZoomSlider()
         updateAvatarPreviewCamera()
     end)
 end
 
--- Click-drag in both axes for a complete 3D orbit; wheel zooms while the
--- pointer is over the viewport. Releasing anywhere ends the drag cleanly.
+-- Drag inside the avatar area to orbit. The embedded slider is the only
+-- zoom control; mouse-wheel events are deliberately ignored here.
+avatarZoomTrack.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        avatarZoomDragging = true
+        setAvatarZoomFromX(input.Position.X)
+    end
+end)
+
 spectateViewport.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-        avatarPreviewDragging = true
-        local mouse = uis:GetMouseLocation()
-        avatarPreviewLastX = mouse.X
-        avatarPreviewLastY = mouse.Y
+        local p = input.Position
+        local panelPos, panelSize = avatarZoomPanel.AbsolutePosition, avatarZoomPanel.AbsoluteSize
+        local onZoomControl = p.X >= panelPos.X and p.X <= panelPos.X + panelSize.X
+            and p.Y >= panelPos.Y and p.Y <= panelPos.Y + panelSize.Y
+        if not onZoomControl then
+            avatarPreviewDragging = true
+            avatarPreviewLastX = p.X
+            avatarPreviewLastY = p.Y
+        end
     end
 end)
+
 uis.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
         avatarPreviewDragging = false
+        avatarZoomDragging = false
     end
 end)
+
 table.insert(avatarPreviewConnections, uis.InputChanged:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseMovement
+    if avatarZoomDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        setAvatarZoomFromX(input.Position.X)
+    elseif (input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch) and avatarPreviewDragging then
-        local mouse = uis:GetMouseLocation()
-        local deltaX = mouse.X - avatarPreviewLastX
-        local deltaY = mouse.Y - avatarPreviewLastY
+        local p = input.Position
+        local deltaX = p.X - avatarPreviewLastX
+        local deltaY = p.Y - avatarPreviewLastY
         avatarPreviewYaw = avatarPreviewYaw - deltaX * 0.012
         avatarPreviewPitch = math.clamp(avatarPreviewPitch - deltaY * 0.01, math.rad(-80), math.rad(80))
-        avatarPreviewLastX = mouse.X
-        avatarPreviewLastY = mouse.Y
+        avatarPreviewLastX = p.X
+        avatarPreviewLastY = p.Y
         updateAvatarPreviewCamera()
-    elseif input.UserInputType == Enum.UserInputType.MouseWheel then
-        local mouse = uis:GetMouseLocation()
-        local pos, size = spectateViewport.AbsolutePosition, spectateViewport.AbsoluteSize
-        if mouse.X >= pos.X and mouse.X <= pos.X + size.X and mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y then
-            avatarPreviewDistance = math.clamp(avatarPreviewDistance - input.Position.Z * 0.8, 2.5, 20)
-            updateAvatarPreviewCamera()
-        end
     end
 end))
 
