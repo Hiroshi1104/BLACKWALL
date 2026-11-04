@@ -2553,54 +2553,129 @@ uis.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Generator ESP (orange) + Terminate button
+-- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
     local GENERATOR_COLOR = Color3.fromRGB(255, 140, 0)
 
-    local function applyGeneratorHighlight(model)
+    local function getGeneratorAnchor(model)
+        if model.PrimaryPart then return model.PrimaryPart end
+        return model:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    local function addGeneratorESP(model)
+        if not model or not model.Parent then return end
+
+        -- Highlight: same style as Player ESP (50% fill, white outline, always on top)
         local hl = model:FindFirstChild("GeneratorHighlight")
         if not hl then
             hl = Instance.new("Highlight")
             hl.Name = "GeneratorHighlight"
-            hl.Adornee = model
+            hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+            hl.FillTransparency = 0.5
+            hl.OutlineTransparency = 0
+            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
             hl.Parent = model
         end
+        hl.Adornee = model
         hl.FillColor = GENERATOR_COLOR
-        hl.OutlineColor = Color3.fromRGB(255, 200, 120)
-        hl.FillTransparency = 0.4
-        hl.OutlineTransparency = 0
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         hl.Enabled = true
+
+        -- Info label: name + distance, like Player ESP
+        local anchor = getGeneratorAnchor(model)
+        if not anchor then return end
+
+        local infoGui = model:FindFirstChild("GeneratorInfoESP", true)
+        if infoGui and not infoGui:IsA("BillboardGui") then
+            infoGui:Destroy()
+            infoGui = nil
+        end
+        if not infoGui then
+            infoGui = Instance.new("BillboardGui")
+            infoGui.Name = "GeneratorInfoESP"
+            infoGui.Size = UDim2.new(0, 220, 0, 42)
+            infoGui.StudsOffset = Vector3.new(0, 3, 0)
+            infoGui.AlwaysOnTop = true
+            infoGui.MaxDistance = 5000
+            local label = Instance.new("TextLabel")
+            label.Name = "Info"
+            label.Size = UDim2.new(1, 0, 1, 0)
+            label.BackgroundTransparency = 1
+            label.Font = Enum.Font.GothamBold
+            label.TextSize = 13
+            label.TextColor3 = GENERATOR_COLOR
+            label.TextStrokeTransparency = 0
+            label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            label.Parent = infoGui
+        end
+        if infoGui.Parent ~= anchor then infoGui.Parent = anchor end
+        infoGui.Enabled = true
+
+        local label = infoGui:FindFirstChild("Info")
+        if label then
+            local myChar = lplr.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            local distance = myRoot and math.floor((myRoot.Position - anchor.Position).Magnitude + 0.5) or 0
+            label.Text = string.format("Generator\n%d studs", distance)
+        end
     end
 
     local function clearGeneratorESP()
         for _, v in ipairs(ws:GetDescendants()) do
-            if v:IsA("Highlight") and v.Name == "GeneratorHighlight" then
+            if (v:IsA("Highlight") and v.Name == "GeneratorHighlight")
+                or (v:IsA("BillboardGui") and v.Name == "GeneratorInfoESP") then
                 v:Destroy()
             end
         end
     end
 
-    -- Workspace.Map.Generators contains the "Generator" models.
+    -- Finds "Generator" models. Checks Workspace.Map.Generators first; if that path
+    -- is missing/empty (different map, streaming), falls back to scanning all of Workspace.
+    local function findGenerators()
+        local found = {}
+        local map = ws:FindFirstChild("Map")
+        local folder = map and map:FindFirstChild("Generators")
+        if folder then
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj.Name == "Generator" then
+                    found[#found + 1] = obj
+                end
+            end
+        end
+        if #found == 0 then
+            for _, obj in ipairs(ws:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name == "Generator" then
+                    local parent = obj.Parent
+                    if not (parent and parent:IsA("Model") and parent.Name == "Generator") then
+                        found[#found + 1] = obj
+                    end
+                end
+            end
+        end
+        return found
+    end
+
     task.spawn(function()
         local wasOn = false
+        local fullScanTimer = 0
+        local cached = {}
         while not terminated do
             if toggles.GeneratorESP then
                 wasOn = true
-                local map = ws:FindFirstChild("Map")
-                local folder = map and map:FindFirstChild("Generators")
-                if folder then
-                    for _, obj in ipairs(folder:GetDescendants()) do
-                        if obj:IsA("Model") and obj.Name == "Generator" then
-                            applyGeneratorHighlight(obj)
-                        end
-                    end
+                fullScanTimer += 0.25
+                -- Re-discover generators once per second; refresh labels every 0.25s.
+                if fullScanTimer >= 1 or #cached == 0 then
+                    fullScanTimer = 0
+                    cached = findGenerators()
+                end
+                for _, model in ipairs(cached) do
+                    pcall(addGeneratorESP, model)
                 end
             elseif wasOn then
                 wasOn = false
+                cached = {}
                 clearGeneratorESP()
             end
-            task.wait(1)
+            task.wait(0.25)
         end
     end)
 
