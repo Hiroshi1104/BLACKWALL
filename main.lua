@@ -37,6 +37,8 @@ local toggles = {
     PlayerESP = false,
     ItemESP = false,
     GeneratorESP = false,
+    HeadArrow = false,
+    OverheadText = true,
     Crosshair = false,
     Fly = false,
     Noclip = false,
@@ -73,6 +75,8 @@ local cfg = {
     genFillOpacity = 0.5, -- Generator ESP fill opacity (0 = invisible, 1 = solid)
     genOutlineOpacity = 1, -- Generator ESP outline opacity
     genHue = 33, -- Generator ESP color hue in degrees (33 = orange)
+    textOpacity = 1, -- overhead text opacity
+    textSize = 13, -- overhead text size
 }
 
 -- Restore only known, serializable settings; preserve defaults for missing/invalid values.
@@ -87,6 +91,40 @@ if type(loadedSettings.cfg) == "table" then
     end
 end
 if type(loadedSettings.flySpeed) == "number" then flySpeed = math.clamp(loadedSettings.flySpeed, 1, 200) end
+
+-- Shared helpers: overhead text style and ESP colors.
+local ESPX = {}
+
+-- Overhead text: one master toggle, opacity and size for every floating label.
+function ESPX.styleText(label, gui)
+    if gui then gui.Enabled = toggles.OverheadText end
+    if label then
+        local t = 1 - math.clamp(cfg.textOpacity, 0, 1)
+        label.TextTransparency = t
+        label.TextStrokeTransparency = t
+        label.TextSize = cfg.textSize
+    end
+end
+
+function ESPX.teamKey(player)
+    if player.Team then return "team:" .. player.Team:GetFullName() end
+    if player.TeamColor and player.TeamColor ~= BrickColor.new("Medium stone grey") then
+        return "color:" .. player.TeamColor.Name
+    end
+    for _, attrName in ipairs({"Team", "team", "Faction", "faction", "Role", "role"}) do
+        local value = player:GetAttribute(attrName)
+        if value ~= nil then return attrName:lower() .. ":" .. tostring(value):lower() end
+    end
+    return nil
+end
+
+function ESPX.playerColor(plr)
+    local myTeam, playerTeam = ESPX.teamKey(lplr), ESPX.teamKey(plr)
+    if myTeam and playerTeam then
+        return myTeam == playerTeam and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(220, 50, 50)
+    end
+    return Color3.fromRGB(0, 200, 80)
+end
 
 local function saveSettings()
     if terminated then return false end
@@ -106,6 +144,8 @@ local function saveSettings()
         genFillOpacity = cfg.genFillOpacity,
         genOutlineOpacity = cfg.genOutlineOpacity,
         genHue = cfg.genHue,
+        textOpacity = cfg.textOpacity,
+        textSize = cfg.textSize,
     }
     local payload = {
         toggles = toggles,
@@ -906,6 +946,11 @@ createToggle("Player ESP", "PlayerESP")
 createToggle("My HP", "SelfHP")
 createToggle("Item ESP", "ItemESP")
 createToggle("Generator ESP", "GeneratorESP")
+createToggle("Head Arrow", "HeadArrow")
+createSection("[ OVERHEAD TEXT ]")
+createToggle("Overhead Text", "OverheadText")
+createSlider("Text Opacity", 0, 1, cfg.textOpacity, function(v) cfg.textOpacity = v end)
+createSlider("Text Size", 8, 24, cfg.textSize, function(v) cfg.textSize = v end)
 createSection("[ NPC ESP SETTINGS ]")
 createSlider("NPC Fill Opacity", 0, 1, cfg.npcFillOpacity, function(v) cfg.npcFillOpacity = v end)
 createSlider("NPC Outline Opacity", 0, 1, cfg.npcOutlineOpacity, function(v) cfg.npcOutlineOpacity = v end)
@@ -1771,6 +1816,7 @@ local function addEnemyHPESP(model)
 
     local label = hpGui:FindFirstChild("HP")
     if label then
+        ESPX.styleText(label, hpGui)
         local hp = math.max(0, hum.Health)
         local maxHp = math.max(1, hum.MaxHealth)
         local pct = math.clamp(hp / maxHp, 0, 1)
@@ -1830,24 +1876,7 @@ local function addPlayerInfoESP(plr, char)
     hl.FillTransparency = 1 - math.clamp(cfg.playerFillOpacity, 0, 1)
     hl.OutlineTransparency = 1 - math.clamp(cfg.playerOutlineOpacity, 0, 1)
 
-    local function getTeamKey(player)
-        if player.Team then return "team:" .. player.Team:GetFullName() end
-        if player.TeamColor and player.TeamColor ~= BrickColor.new("Medium stone grey") then
-            return "color:" .. player.TeamColor.Name
-        end
-        for _, attrName in ipairs({"Team", "team", "Faction", "faction", "Role", "role"}) do
-            local value = player:GetAttribute(attrName)
-            if value ~= nil then return attrName:lower() .. ":" .. tostring(value):lower() end
-        end
-        return nil
-    end
-
-    local myTeam, playerTeam = getTeamKey(lplr), getTeamKey(plr)
-    if myTeam and playerTeam then
-        hl.FillColor = myTeam == playerTeam and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(220, 50, 50)
-    else
-        hl.FillColor = Color3.fromRGB(0, 200, 80)
-    end
+    hl.FillColor = ESPX.playerColor(plr)
 
     local hum = char:FindFirstChildOfClass("Humanoid")
     local anchor = getPlayerESPAnchor(char)
@@ -1879,10 +1908,10 @@ local function addPlayerInfoESP(plr, char)
     end
     -- Reparent if Head was streamed out or the rig uses a different anchor.
     if infoGui.Parent ~= anchor then infoGui.Parent = anchor end
-    infoGui.Enabled = true
 
     local label = infoGui:FindFirstChild("Info")
     if not label then return end
+    ESPX.styleText(label, infoGui)
     local myChar = lplr.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local distance = myRoot and math.floor((myRoot.Position - anchor.Position).Magnitude + 0.5) or 0
@@ -2131,6 +2160,7 @@ local function addItemESP(obj)
         local label = gui:FindFirstChild("Label")
         if label then
             label.Text = obj.Name
+            ESPX.styleText(label, gui)
         end
 
         return
@@ -2161,6 +2191,7 @@ local function addItemESP(obj)
     -- Only the item name. No GUN/MISC/GRENADE category.
     label.Text = obj.Name
     label.Parent = gui
+    ESPX.styleText(label, gui)
 
     itemESPObjects[obj] = gui
 end
@@ -2895,7 +2926,7 @@ do
 
     -- Generator progress: the game's repair script is not readable from here, so this looks for a
     -- number/string stored as an Attribute or a Value object whose name sounds like progress.
-    -- The first match is cached per generator. Use "Dump Generator Info" if nothing is found.
+    -- The first match is cached per generator.
     local PROGRESS_KEYWORDS = {"progress", "percent", "repair", "complet", "charge", "fixed", "fuel"}
     local progressSource = {}   -- [model] = {inst = Instance, attr = string?} or false
     local progressSearched = {} -- [model] = os.clock() of the last failed search
@@ -2956,6 +2987,35 @@ do
         return string.format("%s: %s", shownName, tostring(value))
     end
 
+    -- This game stores generator state as Attributes on the Generator model:
+    -- RepairProgress, ProgressPaused, PlayersRepairingCount and kickcount.
+    local function getGeneratorStatusLines(model)
+        local lines = {}
+        local progress = model:GetAttribute("RepairProgress")
+        if type(progress) == "number" then
+            -- Handles both a 0-100 scale and a 0-1 fraction.
+            local pct = (progress > 0 and progress < 1) and (progress * 100) or progress
+            pct = math.clamp(math.floor(pct + 0.5), 0, 100)
+            lines[#lines + 1] = (pct >= 100) and "REPAIRED" or string.format("Repair: %d%%", pct)
+        else
+            local fallback = getProgressText(model) -- generic search for other games/maps
+            if fallback then lines[#lines + 1] = fallback end
+        end
+
+        local extras = {}
+        if model:GetAttribute("ProgressPaused") == true then extras[#extras + 1] = "PAUSED" end
+        local repairing = model:GetAttribute("PlayersRepairingCount")
+        if type(repairing) == "number" and repairing > 0 then
+            extras[#extras + 1] = string.format("%d repairing", repairing)
+        end
+        local kicks = model:GetAttribute("kickcount")
+        if type(kicks) == "number" and kicks > 0 then
+            extras[#extras + 1] = string.format("kicked x%d", kicks)
+        end
+        if #extras > 0 then lines[#lines + 1] = table.concat(extras, "  |  ") end
+        return lines
+    end
+
     local function addGeneratorESP(model)
         if not model or not model.Parent then return end
 
@@ -2987,7 +3047,7 @@ do
         if not infoGui then
             infoGui = Instance.new("BillboardGui")
             infoGui.Name = "GeneratorInfoESP"
-            infoGui.Size = UDim2.new(0, 220, 0, 56)
+            infoGui.Size = UDim2.new(0, 220, 0, 72)
             infoGui.StudsOffset = Vector3.new(0, 3, 0)
             infoGui.AlwaysOnTop = true
             infoGui.MaxDistance = 5000
@@ -3003,18 +3063,20 @@ do
             label.Parent = infoGui
         end
         if infoGui.Parent ~= anchor then infoGui.Parent = anchor end
-        infoGui.Size = UDim2.new(0, 220, 0, 56)
-        infoGui.Enabled = true
+        infoGui.Size = UDim2.new(0, 220, 0, 72)
 
         local label = infoGui:FindFirstChild("Info")
         if label then
+            ESPX.styleText(label, infoGui)
             label.TextColor3 = genColor
             local myChar = lplr.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             local distance = myRoot and math.floor((myRoot.Position - anchor.Position).Magnitude + 0.5) or 0
-            local progressText = getProgressText(model)
-            label.Text = string.format("Generator\n%d studs", distance)
-                .. (progressText and ("\n" .. progressText) or "")
+            local text = string.format("Generator\n%d studs", distance)
+            for _, line in ipairs(getGeneratorStatusLines(model)) do
+                text = text .. "\n" .. line
+            end
+            label.Text = text
         end
     end
 
@@ -3078,35 +3140,102 @@ do
         end
     end)
 
-    -- Debug helper: prints everything inside the first Generator model (children, Value objects and
-    -- Attributes) to the console, and copies it if the executor supports clipboard access.
-    setTab("Visual")
-    createActionButton("Dump Generator Info", function()
-        local model = findGenerators()[1]
-        if not model then error("No Generator found") end
-        local lines = {"== " .. model:GetFullName() .. " =="}
-        local function describe(inst, depth)
-            local line = string.rep("  ", depth) .. inst.Name .. " [" .. inst.ClassName .. "]"
-            if inst:IsA("ValueBase") then
-                pcall(function() line = line .. " = " .. tostring(inst.Value) end)
-            end
-            for attrName, attrValue in pairs(inst:GetAttributes()) do
-                line = line .. "  @" .. attrName .. "=" .. tostring(attrValue)
-            end
-            lines[#lines + 1] = line
+    -- Head arrows: a down arrow above NPC / player heads, colored like their ESP highlight.
+    -- Built from frames (stem + two rotated bars) so it never depends on font glyphs.
+    local headArrows = {} -- [model] = BillboardGui
+
+    local function buildArrow()
+        local gui = Instance.new("BillboardGui")
+        gui.Name = "HeadArrowESP"
+        gui.Size = UDim2.new(0, 30, 0, 30)
+        gui.AlwaysOnTop = true
+        gui.MaxDistance = 5000
+        local holder = Instance.new("Frame")
+        holder.Name = "Arrow"
+        holder.Size = UDim2.new(1, 0, 1, 0)
+        holder.BackgroundTransparency = 1
+        holder.Parent = gui
+        local function bar(name, size, center, rotation)
+            local f = Instance.new("Frame")
+            f.Name = name
+            f.AnchorPoint = Vector2.new(0.5, 0.5)
+            f.Position = UDim2.new(0, center.X, 0, center.Y)
+            f.Size = UDim2.new(0, size.X, 0, size.Y)
+            f.Rotation = rotation
+            f.BorderSizePixel = 0
+            f.Parent = holder
+            stroke(f, Color3.fromRGB(0, 0, 0), 0, 1)
         end
-        describe(model, 0)
-        for _, d in ipairs(model:GetDescendants()) do
-            if #lines >= 300 then lines[#lines + 1] = "... (truncated)"; break end
-            local depth = 0
-            local p = d.Parent
-            while p and p ~= model do depth += 1; p = p.Parent end
-            describe(d, depth + 1)
+        bar("Stem", Vector2.new(3, 22), Vector2.new(15, 13), 0)
+        bar("Left", Vector2.new(12, 3), Vector2.new(10.8, 21.8), 45)
+        bar("Right", Vector2.new(12, 3), Vector2.new(19.2, 21.8), -45)
+        return gui
+    end
+
+    local function setArrow(model, color)
+        local anchor = model:FindFirstChild("Head")
+            or model:FindFirstChild("HumanoidRootPart")
+            or model.PrimaryPart
+            or model:FindFirstChildWhichIsA("BasePart", true)
+        if not anchor then return end
+        local gui = headArrows[model]
+        if not gui or not gui.Parent then
+            gui = buildArrow()
+            headArrows[model] = gui
         end
-        local text = table.concat(lines, "\n")
-        print(text)
-        local copyFn = setclipboard or toclipboard
-        if type(copyFn) == "function" then pcall(copyFn, text) end
+        gui.StudsOffset = Vector3.new(0, anchor.Name == "Head" and 2.4 or 4, 0)
+        if gui.Parent ~= anchor then gui.Parent = anchor end
+        local holder = gui:FindFirstChild("Arrow")
+        if holder then
+            for _, piece in ipairs(holder:GetChildren()) do
+                if piece:IsA("Frame") then piece.BackgroundColor3 = color end
+            end
+        end
+        gui.Enabled = true
+    end
+
+    local function clearHeadArrows()
+        for model, gui in pairs(headArrows) do
+            if gui then gui:Destroy() end
+            headArrows[model] = nil
+        end
+        for _, v in ipairs(ws:GetDescendants()) do
+            if v:IsA("BillboardGui") and v.Name == "HeadArrowESP" then v:Destroy() end
+        end
+    end
+
+    task.spawn(function()
+        local wasOn = false
+        while not terminated do
+            if toggles.HeadArrow then
+                wasOn = true
+                local seen = {}
+                for _, npc in ipairs(validTargets) do
+                    if npc.Parent then
+                        seen[npc] = true
+                        setArrow(npc, cfg.espFill) -- same color as NPC ESP
+                    end
+                end
+                for _, plr in ipairs(plrs:GetPlayers()) do
+                    local char = plr.Character
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    if plr ~= lplr and char and hum and hum.Health > 0 then
+                        seen[char] = true
+                        setArrow(char, ESPX.playerColor(plr)) -- same color as Player ESP
+                    end
+                end
+                for model, gui in pairs(headArrows) do
+                    if not seen[model] or not model.Parent then
+                        if gui then gui:Destroy() end
+                        headArrows[model] = nil
+                    end
+                end
+            elseif wasOn then
+                wasOn = false
+                clearHeadArrows()
+            end
+            task.wait(0.2)
+        end
     end)
 
     -- Terminate button (Settings tab)
@@ -3124,6 +3253,7 @@ do
         pcall(setNoclip, false)
         pcall(clearItemESP)
         pcall(clearGeneratorESP)
+        pcall(clearHeadArrows)
         pcall(removeSelfHP)
         pcall(function() crossX:Remove(); crossY:Remove() end)
 
