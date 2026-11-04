@@ -231,15 +231,36 @@ logo.BackgroundColor3 = C.bg
 logo.BorderSizePixel = 0
 logo.ZIndex = 4
 stroke(logo, C.accent, 0, 1)
-local logoText = Instance.new("TextLabel")
-logoText.Parent = logo
-logoText.BackgroundTransparency = 1
-logoText.Size = UDim2.new(1, 0, 1, 0)
-logoText.Font = Enum.Font.GothamBlack
-logoText.Text = "☣"
-logoText.TextColor3 = C.accent
-logoText.TextSize = 19
-logoText.ZIndex = 5
+-- Emblem built from frames (no font glyph needed): a diamond "ICE eye" with a pulsing core.
+local logoRing = Instance.new("Frame")
+logoRing.Parent = logo
+logoRing.AnchorPoint = Vector2.new(0.5, 0.5)
+logoRing.Position = UDim2.new(0.5, 0, 0.5, 0)
+logoRing.Size = UDim2.new(0, 16, 0, 16)
+logoRing.Rotation = 45
+logoRing.BackgroundTransparency = 1
+logoRing.BorderSizePixel = 0
+logoRing.ZIndex = 5
+stroke(logoRing, C.accent, 0, 2)
+local logoCore = Instance.new("Frame")
+logoCore.Parent = logo
+logoCore.AnchorPoint = Vector2.new(0.5, 0.5)
+logoCore.Position = UDim2.new(0.5, 0, 0.5, 0)
+logoCore.Size = UDim2.new(0, 6, 0, 6)
+logoCore.Rotation = 45
+logoCore.BackgroundColor3 = C.accent
+logoCore.BorderSizePixel = 0
+logoCore.ZIndex = 6
+for _, side in ipairs({0, 1}) do
+    local tick = Instance.new("Frame")
+    tick.Parent = logo
+    tick.AnchorPoint = Vector2.new(side, 0.5)
+    tick.Position = UDim2.new(side, 0, 0.5, 0)
+    tick.Size = UDim2.new(0, 5, 0, 2)
+    tick.BackgroundColor3 = C.accent
+    tick.BorderSizePixel = 0
+    tick.ZIndex = 5
+end
 
 local title = Instance.new("TextLabel")
 title.Parent = header
@@ -347,6 +368,7 @@ task.spawn(function()
     local bright = true
     while not terminated and linkStatus.Parent do
         linkStatus.TextTransparency = bright and 0 or 0.65
+        logoCore.BackgroundColor3 = bright and C.accent or C.accentDark
         bright = not bright
         task.wait(0.6)
     end
@@ -2871,6 +2893,69 @@ do
         return model:FindFirstChildWhichIsA("BasePart", true)
     end
 
+    -- Generator progress: the game's repair script is not readable from here, so this looks for a
+    -- number/string stored as an Attribute or a Value object whose name sounds like progress.
+    -- The first match is cached per generator. Use "Dump Generator Info" if nothing is found.
+    local PROGRESS_KEYWORDS = {"progress", "percent", "repair", "complet", "charge", "fixed", "fuel"}
+    local progressSource = {}   -- [model] = {inst = Instance, attr = string?} or false
+    local progressSearched = {} -- [model] = os.clock() of the last failed search
+
+    local function nameLooksLikeProgress(name)
+        local n = string.lower(name)
+        for _, keyword in ipairs(PROGRESS_KEYWORDS) do
+            if string.find(n, keyword, 1, true) then return true end
+        end
+        return false
+    end
+
+    local function findProgressSource(model)
+        local candidates = {model}
+        for _, d in ipairs(model:GetDescendants()) do candidates[#candidates + 1] = d end
+        for _, inst in ipairs(candidates) do
+            for attrName, value in pairs(inst:GetAttributes()) do
+                if (type(value) == "number" or type(value) == "string") and nameLooksLikeProgress(attrName) then
+                    return {inst = inst, attr = attrName}
+                end
+            end
+            if (inst:IsA("NumberValue") or inst:IsA("IntValue") or inst:IsA("StringValue"))
+                and nameLooksLikeProgress(inst.Name) then
+                return {inst = inst}
+            end
+        end
+        return nil
+    end
+
+    local function getProgressText(model)
+        local src = progressSource[model]
+        if src and (not src.inst.Parent) then src = nil; progressSource[model] = nil end
+        if not src then
+            local last = progressSearched[model]
+            if last and os.clock() - last < 5 then return nil end -- retry a failed search every 5s
+            src = findProgressSource(model)
+            if not src then
+                progressSearched[model] = os.clock()
+                return nil
+            end
+            progressSource[model] = src
+        end
+
+        local value, shownName
+        if src.attr then
+            value = src.inst:GetAttribute(src.attr)
+            shownName = src.attr
+        else
+            value = src.inst.Value
+            shownName = src.inst.Name
+        end
+        if type(value) == "number" then
+            if value >= 0 and value <= 1 and value ~= math.floor(value) then
+                return string.format("%s: %d%%", shownName, math.floor(value * 100 + 0.5))
+            end
+            return string.format("%s: %s", shownName, tostring(math.floor(value * 10 + 0.5) / 10))
+        end
+        return string.format("%s: %s", shownName, tostring(value))
+    end
+
     local function addGeneratorESP(model)
         if not model or not model.Parent then return end
 
@@ -2902,7 +2987,7 @@ do
         if not infoGui then
             infoGui = Instance.new("BillboardGui")
             infoGui.Name = "GeneratorInfoESP"
-            infoGui.Size = UDim2.new(0, 220, 0, 42)
+            infoGui.Size = UDim2.new(0, 220, 0, 56)
             infoGui.StudsOffset = Vector3.new(0, 3, 0)
             infoGui.AlwaysOnTop = true
             infoGui.MaxDistance = 5000
@@ -2918,6 +3003,7 @@ do
             label.Parent = infoGui
         end
         if infoGui.Parent ~= anchor then infoGui.Parent = anchor end
+        infoGui.Size = UDim2.new(0, 220, 0, 56)
         infoGui.Enabled = true
 
         local label = infoGui:FindFirstChild("Info")
@@ -2926,7 +3012,9 @@ do
             local myChar = lplr.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             local distance = myRoot and math.floor((myRoot.Position - anchor.Position).Magnitude + 0.5) or 0
+            local progressText = getProgressText(model)
             label.Text = string.format("Generator\n%d studs", distance)
+                .. (progressText and ("\n" .. progressText) or "")
         end
     end
 
@@ -2988,6 +3076,37 @@ do
             end
             task.wait(0.25)
         end
+    end)
+
+    -- Debug helper: prints everything inside the first Generator model (children, Value objects and
+    -- Attributes) to the console, and copies it if the executor supports clipboard access.
+    setTab("Visual")
+    createActionButton("Dump Generator Info", function()
+        local model = findGenerators()[1]
+        if not model then error("No Generator found") end
+        local lines = {"== " .. model:GetFullName() .. " =="}
+        local function describe(inst, depth)
+            local line = string.rep("  ", depth) .. inst.Name .. " [" .. inst.ClassName .. "]"
+            if inst:IsA("ValueBase") then
+                pcall(function() line = line .. " = " .. tostring(inst.Value) end)
+            end
+            for attrName, attrValue in pairs(inst:GetAttributes()) do
+                line = line .. "  @" .. attrName .. "=" .. tostring(attrValue)
+            end
+            lines[#lines + 1] = line
+        end
+        describe(model, 0)
+        for _, d in ipairs(model:GetDescendants()) do
+            if #lines >= 300 then lines[#lines + 1] = "... (truncated)"; break end
+            local depth = 0
+            local p = d.Parent
+            while p and p ~= model do depth += 1; p = p.Parent end
+            describe(d, depth + 1)
+        end
+        local text = table.concat(lines, "\n")
+        print(text)
+        local copyFn = setclipboard or toclipboard
+        if type(copyFn) == "function" then pcall(copyFn, text) end
     end)
 
     -- Terminate button (Settings tab)
