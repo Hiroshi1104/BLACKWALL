@@ -563,106 +563,17 @@ createSection("[ MOVEMENT SETTINGS ]")
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
 
--- Overwatch: player selection, teleport, spectate, and player information.
+-- Overwatch uses one shared player list for teleporting, spectating, and player info.
 setTab("Overwatch")
-createSection("[ SELECT PLAYER ]")
-local selectedTeleportPlayer = nil
-local teleportPlayerList = Instance.new("Frame")
-teleportPlayerList.Name = "TeleportPlayerList"
-teleportPlayerList.Parent = scroll
-teleportPlayerList.BackgroundColor3 = C.panel
-teleportPlayerList.BorderSizePixel = 0
-teleportPlayerList.Size = UDim2.new(1, -20, 0, 180)
-teleportPlayerList.ZIndex = 7
-corner(teleportPlayerList, 2)
-stroke(teleportPlayerList, C.outline, 0.12, 1)
-
-local playerListScroll = Instance.new("ScrollingFrame")
-playerListScroll.Name = "Players"
-playerListScroll.Parent = teleportPlayerList
-playerListScroll.BackgroundTransparency = 1
-playerListScroll.BorderSizePixel = 0
-playerListScroll.Position = UDim2.new(0, 4, 0, 4)
-playerListScroll.Size = UDim2.new(1, -8, 1, -8)
-playerListScroll.ScrollBarThickness = 4
-playerListScroll.ScrollBarImageColor3 = C.accent
-playerListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-playerListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-playerListScroll.ScrollingDirection = Enum.ScrollingDirection.Y
-playerListScroll.ZIndex = 8
-local playerListLayout = Instance.new("UIListLayout")
-playerListLayout.Parent = playerListScroll
-playerListLayout.Padding = UDim.new(0, 3)
-playerListLayout.SortOrder = Enum.SortOrder.Name
-
-local function getTeleportTargets()
-    local targets = {}
-    for _, player in ipairs(plrs:GetPlayers()) do
-        if player ~= lplr and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            table.insert(targets, player)
-        end
-    end
-    table.sort(targets, function(a, b) return a.Name:lower() < b.Name:lower() end)
-    return targets
-end
-
-local function refreshTeleportPlayers()
-    for _, child in ipairs(playerListScroll:GetChildren()) do
-        if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
-    end
-    local targets = getTeleportTargets()
-    if #targets == 0 then
-        local empty = Instance.new("TextLabel")
-        empty.Parent = playerListScroll
-        empty.Size = UDim2.new(1, -4, 0, 30)
-        empty.BackgroundTransparency = 1
-        empty.Font = Enum.Font.Code
-        empty.Text = "NO PLAYERS AVAILABLE"
-        empty.TextColor3 = C.muted
-        empty.TextSize = 12
-        empty.ZIndex = 9
-        selectedTeleportPlayer = nil
-        return
-    end
-    local selectionStillValid = false
-    for _, player in ipairs(targets) do
-        if player == selectedTeleportPlayer then selectionStillValid = true end
-        local item = Instance.new("TextButton")
-        item.Name = "Player_" .. player.UserId
-        item.Parent = playerListScroll
-        item.Size = UDim2.new(1, -4, 0, 30)
-        item.BackgroundColor3 = player == selectedTeleportPlayer and C.panel2 or C.bg
-        item.BorderSizePixel = 0
-        item.AutoButtonColor = false
-        item.Font = Enum.Font.Code
-        item.Text = (player == selectedTeleportPlayer and ">  " or "   ") .. player.Name .. "  (@" .. player.DisplayName .. ")"
-        item.TextColor3 = player == selectedTeleportPlayer and C.trueState or C.text
-        item.TextSize = 11
-        item.TextXAlignment = Enum.TextXAlignment.Left
-        item.ZIndex = 9
-        corner(item, 2)
-        item.MouseButton1Click:Connect(function()
-            selectedTeleportPlayer = player
-            refreshTeleportPlayers()
-        end)
-    end
-    if not selectionStillValid then selectedTeleportPlayer = nil end
-end
-
-local refreshPlayersButton = createActionButton("Refresh Player List", refreshTeleportPlayers)
-refreshPlayersButton.LayoutOrder = 2
-refreshTeleportPlayers()
-plrs.PlayerAdded:Connect(refreshTeleportPlayers)
-plrs.PlayerRemoving:Connect(function(player)
-    if player == selectedTeleportPlayer then selectedTeleportPlayer = nil end
-    refreshTeleportPlayers()
-end)
+local selectedSpectatePlayer = nil
+local updateSpectateInfo
 
 createActionButton("Teleport to Selected Player", function()
-    if not selectedTeleportPlayer or selectedTeleportPlayer.Parent ~= plrs then
+    local player = selectedSpectatePlayer
+    if not player or player.Parent ~= plrs then
         error("Select a player from the list first")
     end
-    local targetCharacter = selectedTeleportPlayer.Character
+    local targetCharacter = player.Character
     local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
     local character = lplr.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -672,16 +583,13 @@ createActionButton("Teleport to Selected Player", function()
     root.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
 end)
 
--- Spectate controls share the Overwatch page. The Scriptable camera avoids
--- Roblox's normal camera collision checks, so walls do not push the view away.
--- (No page switch here.)
-createSection("[ SPECTATE PLAYER ]")
+-- The same list below drives both teleport and spectate actions.
+createSection("[ PLAYER LIST ]")
 
-local selectedSpectatePlayer = nil
 local spectateTargetPlayer = nil
 local spectateRenderConnection = nil
 local spectatePlayerList = Instance.new("Frame")
-spectatePlayerList.Name = "SpectatePlayerList"
+spectatePlayerList.Name = "OverwatchPlayerList"
 spectatePlayerList.Parent = scroll
 spectatePlayerList.BackgroundColor3 = C.panel
 spectatePlayerList.BorderSizePixel = 0
@@ -902,7 +810,7 @@ local function refreshSpectatePlayers()
     end
 end
 
-createActionButton("Refresh Spectate List", refreshSpectatePlayers)
+createActionButton("Refresh Player List", refreshSpectatePlayers)
 createActionButton("Spectate Selected Player", function()
     startSpectating(selectedSpectatePlayer)
 end)
@@ -961,6 +869,123 @@ spectateInfoText.TextXAlignment = Enum.TextXAlignment.Left
 spectateInfoText.TextYAlignment = Enum.TextYAlignment.Top
 spectateInfoText.ZIndex = 8
 
+-- Interactive 3D preview of the currently selected player's avatar.
+createSection("[ 3D AVATAR PREVIEW ]")
+local spectateViewport = Instance.new("ViewportFrame")
+spectateViewport.Name = "SelectedPlayer3DAvatar"
+spectateViewport.Parent = scroll
+spectateViewport.BackgroundColor3 = C.bg
+spectateViewport.BorderSizePixel = 0
+spectateViewport.Size = UDim2.new(1, -20, 0, 220)
+spectateViewport.ZIndex = 7
+spectateViewport.Active = true
+spectateViewport.Ambient = Color3.fromRGB(170, 170, 170)
+spectateViewport.LightColor = Color3.fromRGB(255, 255, 255)
+spectateViewport.LightDirection = Vector3.new(-1, -1, -1)
+corner(spectateViewport, 2)
+stroke(spectateViewport, C.outline, 0.12, 1)
+
+local avatarWorld = Instance.new("WorldModel")
+avatarWorld.Parent = spectateViewport
+local avatarViewportCamera = Instance.new("Camera")
+avatarViewportCamera.Name = "AvatarCamera"
+avatarViewportCamera.Parent = spectateViewport
+spectateViewport.CurrentCamera = avatarViewportCamera
+
+local avatarPreviewModel = nil
+local avatarPreviewYaw = math.rad(180)
+local avatarPreviewDistance = 7
+local avatarPreviewDragging = false
+local avatarPreviewLastX = 0
+local avatarPreviewConnections = {}
+
+local function clearAvatarPreview()
+    for _, child in ipairs(avatarWorld:GetChildren()) do
+        child:Destroy()
+    end
+    avatarPreviewModel = nil
+end
+
+local function updateAvatarPreviewCamera()
+    if not avatarPreviewModel then return end
+    local boxCFrame, boxSize = avatarPreviewModel:GetBoundingBox()
+    local focus = boxCFrame.Position + Vector3.new(0, boxSize.Y * 0.05, 0)
+    local rotation = CFrame.Angles(0, avatarPreviewYaw, 0)
+    local offset = rotation:VectorToWorldSpace(Vector3.new(0, 0, avatarPreviewDistance))
+    avatarViewportCamera.CFrame = CFrame.lookAt(focus + offset, focus)
+end
+
+local function showAvatarPreview(player)
+    clearAvatarPreview()
+    avatarPreviewYaw = math.rad(180)
+    avatarPreviewDistance = 7
+    if not player or player.Parent ~= plrs then return end
+
+    local character = player.Character
+    if not character then return end
+
+    local oldArchivable = character.Archivable
+    local clone
+    local ok = pcall(function()
+        character.Archivable = true
+        clone = character:Clone()
+        character.Archivable = oldArchivable
+    end)
+    character.Archivable = oldArchivable
+    if not ok or not clone then return end
+
+    clone.Name = "AvatarPreview"
+    for _, descendant in ipairs(clone:GetDescendants()) do
+        if descendant:IsA("Script") or descendant:IsA("LocalScript") then
+            descendant:Destroy()
+        elseif descendant:IsA("BasePart") then
+            descendant.Anchored = true
+            descendant.CanCollide = false
+            descendant.CanTouch = false
+            descendant.CanQuery = false
+        elseif descendant:IsA("Humanoid") then
+            descendant.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        end
+    end
+    clone.Parent = avatarWorld
+    avatarPreviewModel = clone
+
+    pcall(function()
+        clone:PivotTo(CFrame.new(0, 0, 0))
+        local _, size = clone:GetBoundingBox()
+        avatarPreviewDistance = math.max(5, size.Magnitude * 0.85)
+        updateAvatarPreviewCamera()
+    end)
+end
+
+-- Drag horizontally to rotate; use the mouse wheel to zoom the 3D preview.
+spectateViewport.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        avatarPreviewDragging = true
+        avatarPreviewLastX = uis:GetMouseLocation().X
+    end
+end)
+spectateViewport.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        avatarPreviewDragging = false
+    end
+end)
+table.insert(avatarPreviewConnections, uis.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and avatarPreviewDragging then
+        local mouseX = uis:GetMouseLocation().X
+        avatarPreviewYaw = avatarPreviewYaw - (mouseX - avatarPreviewLastX) * 0.012
+        avatarPreviewLastX = mouseX
+        updateAvatarPreviewCamera()
+    elseif input.UserInputType == Enum.UserInputType.MouseWheel then
+        local mouse = uis:GetMouseLocation()
+        local pos, size = spectateViewport.AbsolutePosition, spectateViewport.AbsoluteSize
+        if mouse.X >= pos.X and mouse.X <= pos.X + size.X and mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y then
+            avatarPreviewDistance = math.clamp(avatarPreviewDistance - input.Position.Z * 0.8, 2.5, 20)
+            updateAvatarPreviewCamera()
+        end
+    end
+end))
+
 local spectateCopyButton = Instance.new("TextButton")
 spectateCopyButton.Name = "CopyPlayerInfo"
 spectateCopyButton.Parent = spectateInfoCard
@@ -1005,6 +1030,7 @@ spectateCopyButton.MouseButton1Click:Connect(function()
 end)
 
 updateSpectateInfo = function(player)
+    showAvatarPreview(player)
     if not player or player.Parent ~= plrs then
         spectateAvatar.Image = ""
         spectateInfoText.Text = "Choose a player from the list above."
