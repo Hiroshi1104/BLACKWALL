@@ -149,11 +149,9 @@ local C = {
     green = Color3.fromRGB(0, 220, 235),
 }
 
+-- Blackwall style is hard-edged: UICorner calls are intentionally no-ops.
 local function corner(parent, radius)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius or 2)
-    c.Parent = parent
-    return c
+    return nil
 end
 
 local function stroke(parent, color, transparency, thickness)
@@ -173,78 +171,251 @@ gui.DisplayOrder = 999999
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = cg
 
+local TweenService = game:GetService("TweenService")
+
 local main = Instance.new("Frame")
 main.Name = "main"
 main.Parent = gui
-main.BackgroundColor3 = C.bg
+main.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- colored by the gradient below
 main.BorderSizePixel = 0
 main.Position = UDim2.new(0.035, 0, 0.12, 0)
 main.Size = UDim2.new(0, 390, 0, 560)
 main.Active = true
 main.Draggable = false
 main.ClipsDescendants = true
-corner(main, 2)
 stroke(main, C.outline, 0.05, 1)
 local sizeConstraint = Instance.new("UISizeConstraint")
 sizeConstraint.Parent = main
 sizeConstraint.MinSize = Vector2.new(320, 360)
 sizeConstraint.MaxSize = Vector2.new(460, 760)
 
+-- Pitch black fading into a faint blood-red haze at the bottom.
+local mainGradient = Instance.new("UIGradient")
+mainGradient.Rotation = 90
+mainGradient.Color = ColorSequence.new(Color3.fromRGB(0, 0, 0), Color3.fromRGB(26, 2, 6))
+mainGradient.Parent = main
+
 local topAccent = Instance.new("Frame")
 topAccent.Parent = main
 topAccent.Size = UDim2.new(1, 0, 0, 2)
-topAccent.BackgroundColor3 = C.outline
+topAccent.BackgroundColor3 = C.accent
 topAccent.BorderSizePixel = 0
+topAccent.ZIndex = 4
 
+-- Header ---------------------------------------------------------------
 local header = Instance.new("Frame")
 header.Parent = main
-header.BackgroundColor3 = C.panel
+header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 header.BorderSizePixel = 0
 header.Position = UDim2.new(0, 0, 0, 3)
 header.Size = UDim2.new(1, 0, 0, 58)
+header.ZIndex = 3
+local headerGradient = Instance.new("UIGradient")
+headerGradient.Color = ColorSequence.new(Color3.fromRGB(7, 7, 8), Color3.fromRGB(58, 5, 12))
+headerGradient.Parent = header
+
+local headerLine = Instance.new("Frame")
+headerLine.Parent = header
+headerLine.AnchorPoint = Vector2.new(0, 1)
+headerLine.Position = UDim2.new(0, 0, 1, 0)
+headerLine.Size = UDim2.new(1, 0, 0, 1)
+headerLine.BackgroundColor3 = C.outline
+headerLine.BorderSizePixel = 0
+headerLine.ZIndex = 4
 
 local logo = Instance.new("Frame")
 logo.Parent = header
 logo.Position = UDim2.new(0, 12, 0, 12)
 logo.Size = UDim2.new(0, 32, 0, 32)
-logo.BackgroundColor3 = C.accent
+logo.BackgroundColor3 = C.bg
 logo.BorderSizePixel = 0
-corner(logo, 2)
+logo.ZIndex = 4
+stroke(logo, C.accent, 0, 1)
 local logoText = Instance.new("TextLabel")
 logoText.Parent = logo
 logoText.BackgroundTransparency = 1
 logoText.Size = UDim2.new(1, 0, 1, 0)
 logoText.Font = Enum.Font.GothamBlack
 logoText.Text = "☣"
-logoText.TextColor3 = C.text
+logoText.TextColor3 = C.accent
 logoText.TextSize = 19
+logoText.ZIndex = 5
 
 local title = Instance.new("TextLabel")
 title.Parent = header
 title.BackgroundTransparency = 1
 title.Position = UDim2.new(0, 54, 0, 10)
-title.Size = UDim2.new(1, -70, 0, 22)
+title.Size = UDim2.new(1, -140, 0, 22)
 title.Font = Enum.Font.Code
 title.Text = "BLACKWALL  //  MAIN SYSTEM"
 title.TextColor3 = C.text
 title.TextSize = 16
 title.TextXAlignment = Enum.TextXAlignment.Left
+title.ZIndex = 5
 local subtitle = Instance.new("TextLabel")
 subtitle.Parent = header
 subtitle.BackgroundTransparency = 1
 subtitle.Position = UDim2.new(0, 54, 0, 33)
-subtitle.Size = UDim2.new(1, -70, 0, 14)
+subtitle.Size = UDim2.new(1, -140, 0, 14)
 subtitle.Font = Enum.Font.Code
 subtitle.Text = "UNAUTHORIZED ACCESS  •  RightCTRL Default"
 subtitle.TextColor3 = C.muted
 subtitle.TextSize = 9
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
+subtitle.ZIndex = 5
+
+-- Hazard stripes + blinking link status (top right of the header).
+local stripes = Instance.new("TextLabel")
+stripes.Parent = header
+stripes.BackgroundTransparency = 1
+stripes.AnchorPoint = Vector2.new(1, 0)
+stripes.Position = UDim2.new(1, -12, 0, 9)
+stripes.Size = UDim2.new(0, 80, 0, 16)
+stripes.Font = Enum.Font.Code
+stripes.Text = "////////"
+stripes.TextColor3 = C.accent
+stripes.TextTransparency = 0.35
+stripes.TextSize = 14
+stripes.TextXAlignment = Enum.TextXAlignment.Right
+stripes.ZIndex = 5
+local linkStatus = Instance.new("TextLabel")
+linkStatus.Parent = header
+linkStatus.BackgroundTransparency = 1
+linkStatus.AnchorPoint = Vector2.new(1, 0)
+linkStatus.Position = UDim2.new(1, -12, 0, 31)
+linkStatus.Size = UDim2.new(0, 80, 0, 14)
+linkStatus.Font = Enum.Font.Code
+linkStatus.Text = "● LINK ACTIVE"
+linkStatus.TextColor3 = C.trueState
+linkStatus.TextSize = 9
+linkStatus.TextXAlignment = Enum.TextXAlignment.Right
+linkStatus.ZIndex = 5
+
+-- Corner brackets
+local function addBracket(parent, ax, ay)
+    for _, size in ipairs({Vector2.new(14, 2), Vector2.new(2, 14)}) do
+        local f = Instance.new("Frame")
+        f.Parent = parent
+        f.AnchorPoint = Vector2.new(ax, ay)
+        f.Position = UDim2.new(ax, 0, ay, 0)
+        f.Size = UDim2.new(0, size.X, 0, size.Y)
+        f.BackgroundColor3 = C.accent
+        f.BorderSizePixel = 0
+        f.ZIndex = 60
+    end
+end
+addBracket(main, 0, 0)
+addBracket(main, 1, 0)
+addBracket(main, 0, 1)
+addBracket(main, 1, 1)
+
+-- Slow red scanline sweeping down the panel (does not block input).
+local scanline = Instance.new("Frame")
+scanline.Name = "Scanline"
+scanline.Parent = main
+scanline.BackgroundColor3 = C.accent
+scanline.BackgroundTransparency = 0.88
+scanline.BorderSizePixel = 0
+scanline.Active = false
+scanline.Size = UDim2.new(1, 0, 0, 2)
+scanline.Position = UDim2.new(0, 0, 0, 0)
+scanline.ZIndex = 50
+TweenService:Create(
+    scanline,
+    TweenInfo.new(4, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1, false, 0),
+    {Position = UDim2.new(0, 0, 1, 0)}
+):Play()
+
+-- Occasional title glitch + blinking link light.
+task.spawn(function()
+    local basePos = title.Position
+    while not terminated and title.Parent do
+        task.wait(math.random(25, 60) / 10)
+        for _ = 1, math.random(2, 4) do
+            if terminated or not title.Parent then return end
+            title.Position = basePos + UDim2.new(0, math.random(-3, 3), 0, math.random(-1, 1))
+            title.TextColor3 = (math.random() > 0.5) and C.accent or C.trueState
+            task.wait(0.04)
+        end
+        if title.Parent then
+            title.Position = basePos
+            title.TextColor3 = C.text
+        end
+    end
+end)
+task.spawn(function()
+    local bright = true
+    while not terminated and linkStatus.Parent do
+        linkStatus.TextTransparency = bright and 0 or 0.65
+        bright = not bright
+        task.wait(0.6)
+    end
+end)
+
+-- Footer: operator name, FPS and ping --------------------------------------
+local footer = Instance.new("Frame")
+footer.Parent = main
+footer.AnchorPoint = Vector2.new(0, 1)
+footer.Position = UDim2.new(0, 0, 1, 0)
+footer.Size = UDim2.new(1, 0, 0, 20)
+footer.BackgroundColor3 = C.panel
+footer.BorderSizePixel = 0
+footer.ZIndex = 12
+local footerLine = Instance.new("Frame")
+footerLine.Parent = footer
+footerLine.Size = UDim2.new(1, 0, 0, 1)
+footerLine.BackgroundColor3 = C.outline
+footerLine.BorderSizePixel = 0
+footerLine.ZIndex = 13
+local footerLeft = Instance.new("TextLabel")
+footerLeft.Parent = footer
+footerLeft.BackgroundTransparency = 1
+footerLeft.Position = UDim2.new(0, 10, 0, 1)
+footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
+footerLeft.Font = Enum.Font.Code
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name)
+footerLeft.TextColor3 = C.muted
+footerLeft.TextSize = 9
+footerLeft.TextXAlignment = Enum.TextXAlignment.Left
+footerLeft.TextTruncate = Enum.TextTruncate.AtEnd
+footerLeft.ZIndex = 13
+local footerRight = Instance.new("TextLabel")
+footerRight.Parent = footer
+footerRight.BackgroundTransparency = 1
+footerRight.AnchorPoint = Vector2.new(1, 0)
+footerRight.Position = UDim2.new(1, -10, 0, 1)
+footerRight.Size = UDim2.new(0.4, 0, 1, -1)
+footerRight.Font = Enum.Font.Code
+footerRight.Text = "FPS --  |  PING --"
+footerRight.TextColor3 = C.accent
+footerRight.TextSize = 9
+footerRight.TextXAlignment = Enum.TextXAlignment.Right
+footerRight.ZIndex = 13
+
+task.spawn(function()
+    local frames, elapsed = 0, 0
+    local hb = rs.Heartbeat:Connect(function(dt)
+        frames += 1
+        elapsed += dt
+    end)
+    while not terminated and footerRight.Parent do
+        task.wait(0.5)
+        local fps = elapsed > 0 and math.floor(frames / elapsed + 0.5) or 0
+        frames, elapsed = 0, 0
+        local ping = 0
+        pcall(function() ping = math.floor(lplr:GetNetworkPing() * 1000 + 0.5) end)
+        if footerRight.Parent then
+            footerRight.Text = string.format("FPS %d  |  PING %dms", fps, ping)
+        end
+    end
+    hb:Disconnect()
+end)
 
 -- Category tabs: horizontally scrollable so every category remains reachable.
 local tabBar = Instance.new("ScrollingFrame")
 tabBar.Name = "CategoryTabs"
 tabBar.Parent = main
-tabBar.BackgroundColor3 = C.bg
+tabBar.BackgroundTransparency = 1
 tabBar.BorderSizePixel = 0
 tabBar.Position = UDim2.new(0, 8, 0, 65)
 tabBar.Size = UDim2.new(1, -16, 0, 32)
@@ -262,7 +433,16 @@ tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 tabLayout.Padding = UDim.new(0, 5)
 tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 
--- Only the title/header strip and unused tab-bar background can drag the menu.
+local tabDivider = Instance.new("Frame")
+tabDivider.Parent = main
+tabDivider.Position = UDim2.new(0, 8, 0, 100)
+tabDivider.Size = UDim2.new(1, -16, 0, 1)
+tabDivider.BackgroundColor3 = C.outline
+tabDivider.BackgroundTransparency = 0.35
+tabDivider.BorderSizePixel = 0
+tabDivider.ZIndex = 8
+
+-- Only the title/header strip and the footer can drag the menu.
 -- Content controls (including the 3D avatar viewport) never initiate window dragging.
 local menuDragging = false
 local menuDragStart = nil
@@ -275,6 +455,7 @@ local function beginMenuDrag(input)
     menuStartPosition = main.Position
 end
 header.InputBegan:Connect(beginMenuDrag)
+footer.InputBegan:Connect(beginMenuDrag)
 uis.InputChanged:Connect(function(input)
     if menuDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch) then
@@ -294,6 +475,7 @@ end)
 
 local tabPages = {}
 local tabButtons = {}
+local tabIndicators = {}
 local activeTab = "Main"
 local scroll, layout
 local function setTab(name)
@@ -303,8 +485,9 @@ local function setTab(name)
     end
     for tabName, button in pairs(tabButtons) do
         local selected = tabName == name
-        button.BackgroundColor3 = selected and C.panel2 or C.panel
-        button.TextColor3 = selected and C.accent or C.muted
+        button.BackgroundColor3 = selected and C.hover or C.panel
+        button.TextColor3 = selected and C.text or C.muted
+        tabIndicators[tabName].Visible = selected
     end
     scroll = tabPages[name]
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
@@ -316,12 +499,12 @@ for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Settings"
     page.Parent = main
     page.BackgroundTransparency = 1
     page.BorderSizePixel = 0
-    page.Position = UDim2.new(0, 0, 0, 103)
-    page.Size = UDim2.new(1, 0, 1, -109)
+    page.Position = UDim2.new(0, 0, 0, 105)
+    page.Size = UDim2.new(1, 0, 1, -129)
     page.CanvasSize = UDim2.new(0, 0, 0, 0)
-    page.ScrollBarThickness = 5
+    page.ScrollBarThickness = 3
     page.ScrollBarImageColor3 = C.accent
-    page.ScrollBarImageTransparency = 0.15
+    page.ScrollBarImageTransparency = 0
     page.ScrollingEnabled = true
     page.AutomaticCanvasSize = Enum.AutomaticSize.Y
     page.Visible = false
@@ -350,122 +533,185 @@ for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Settings"
     button.TextSize = 10
     button.TextColor3 = C.muted
     button.ZIndex = 9
-    corner(button, 2)
-    stroke(button, C.outline, 0.25, 1)
+    stroke(button, C.outline, 0.4, 1)
+
+    -- Bottom indicator bar for the active tab.
+    local indicator = Instance.new("Frame")
+    indicator.Name = "Indicator"
+    indicator.Parent = button
+    indicator.AnchorPoint = Vector2.new(0, 1)
+    indicator.Position = UDim2.new(0, 0, 1, 0)
+    indicator.Size = UDim2.new(1, 0, 0, 2)
+    indicator.BackgroundColor3 = C.accent
+    indicator.BorderSizePixel = 0
+    indicator.Visible = false
+    indicator.ZIndex = 10
+
     button.MouseButton1Click:Connect(function() setTab(name) end)
+    button.MouseEnter:Connect(function()
+        if activeTab ~= name then button.TextColor3 = C.text end
+    end)
+    button.MouseLeave:Connect(function()
+        if activeTab ~= name then button.TextColor3 = C.muted end
+    end)
     tabPages[name] = page
     tabButtons[name] = button
+    tabIndicators[name] = indicator
 end
 setTab("Main")
 
+-- Section header: red notch, "// TITLE", and a rule with a bright leading segment.
 local function createSection(name)
+    local clean = (string.gsub(string.gsub(name, "^%[%s*", ""), "%s*%]$", ""))
     local wrap = Instance.new("Frame")
     wrap.Parent = scroll
     wrap.BackgroundTransparency = 1
-    wrap.Size = UDim2.new(1, -20, 0, 24)
+    wrap.Size = UDim2.new(1, -20, 0, 26)
     wrap.BorderSizePixel = 0
-    local line = Instance.new("Frame")
-    line.Parent = wrap
-    line.BackgroundColor3 = C.accent
-    line.BorderSizePixel = 0
-    line.Position = UDim2.new(0, 1, 0, 7)
-    line.Size = UDim2.new(0, 3, 0, 13)
-    corner(line, 2)
+    local notch = Instance.new("Frame")
+    notch.Parent = wrap
+    notch.BackgroundColor3 = C.accent
+    notch.BorderSizePixel = 0
+    notch.Position = UDim2.new(0, 1, 0, 6)
+    notch.Size = UDim2.new(0, 6, 0, 10)
     local lbl = Instance.new("TextLabel")
     lbl.Parent = wrap
     lbl.BackgroundTransparency = 1
-    lbl.Position = UDim2.new(0, 11, 0, 0)
-    lbl.Size = UDim2.new(1, -11, 1, 0)
+    lbl.Position = UDim2.new(0, 14, 0, 0)
+    lbl.Size = UDim2.new(1, -14, 0, 22)
     lbl.Font = Enum.Font.Code
-    lbl.Text = string.upper(name)
-    lbl.TextColor3 = C.muted
+    lbl.Text = "// " .. string.upper(clean)
+    lbl.TextColor3 = C.accent
     lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local rule = Instance.new("Frame")
+    rule.Parent = wrap
+    rule.BackgroundColor3 = C.outline
+    rule.BackgroundTransparency = 0.35
+    rule.BorderSizePixel = 0
+    rule.Position = UDim2.new(0, 0, 1, -3)
+    rule.Size = UDim2.new(1, 0, 0, 1)
+    local ruleLead = Instance.new("Frame")
+    ruleLead.Parent = wrap
+    ruleLead.BackgroundColor3 = C.accent
+    ruleLead.BorderSizePixel = 0
+    ruleLead.Position = UDim2.new(0, 0, 1, -3)
+    ruleLead.Size = UDim2.new(0, 36, 0, 1)
 end
 
 local function createActionButton(name, callback)
+    local danger = (name == "Terminate")
+    local prefix = "> "
+    local baseText = danger and C.accent or C.text
+    local baseBg = danger and C.panel2 or C.panel
+
     local b = Instance.new("TextButton")
     b.Parent = scroll
-    b.BackgroundColor3 = C.panel
+    b.BackgroundColor3 = baseBg
     b.Size = UDim2.new(1, -20, 0, 36)
     b.Font = Enum.Font.Code
-    b.Text = name
-    b.TextColor3 = C.text
+    b.Text = prefix .. name
+    b.TextColor3 = baseText
     b.TextSize = 12
+    b.TextXAlignment = Enum.TextXAlignment.Left
     b.BorderSizePixel = 0
     b.ZIndex = 7
     b.AutoButtonColor = false
-    corner(b, 2)
+    local pad = Instance.new("UIPadding")
+    pad.Parent = b
+    pad.PaddingLeft = UDim.new(0, 14)
     local edge = stroke(b, C.outline, 0.12, 1)
+    local bar = Instance.new("Frame")
+    bar.Parent = b
+    bar.BackgroundColor3 = danger and C.accent or C.accentDark
+    bar.BorderSizePixel = 0
+    bar.Position = UDim2.new(0, -14, 0, 0)
+    bar.Size = UDim2.new(0, 3, 1, 0)
+    bar.ZIndex = 8
+
     b.MouseEnter:Connect(function()
-        b.BackgroundColor3 = C.panel2
+        b.BackgroundColor3 = C.hover
+        b.TextColor3 = Color3.fromRGB(255, 255, 255)
+        bar.BackgroundColor3 = C.accent
         edge.Color = C.accent
     end)
     b.MouseLeave:Connect(function()
-        b.BackgroundColor3 = C.panel
+        b.BackgroundColor3 = baseBg
+        b.TextColor3 = baseText
+        bar.BackgroundColor3 = danger and C.accent or C.accentDark
         edge.Color = C.outline
     end)
     b.MouseButton1Click:Connect(function()
         local ok, message = pcall(callback)
-        b.Text = ok and (name .. "  [DONE]") or (name .. "  [ERROR]")
+        b.Text = prefix .. name .. (ok and "  [DONE]" or "  [ERROR]")
         if not ok then warn("[BLACKWALL] " .. tostring(message)) end
         task.delay(1.5, function()
-            if b and b.Parent then b.Text = name end
+            if b and b.Parent then b.Text = prefix .. name end
         end)
     end)
     return b
 end
 
+-- Toggle: status bar on the left, [ ON ] / [ OFF ] readout on the right.
 local function createToggle(name, key)
     local b = Instance.new("TextButton")
     b.Parent = scroll
     b.BackgroundColor3 = C.panel
     b.Size = UDim2.new(1, -20, 0, 34)
-    b.Font = Enum.Font.GothamMedium
+    b.Font = Enum.Font.Code
     b.Text = ""
     b.TextColor3 = C.text
     b.TextSize = 12
     b.BorderSizePixel = 0
     b.ZIndex = 7
     b.AutoButtonColor = false
-    corner(b, 2)
     local edge = stroke(b, C.outline, 0.2, 1)
+
+    local bar = Instance.new("Frame")
+    bar.Parent = b
+    bar.BorderSizePixel = 0
+    bar.Size = UDim2.new(0, 3, 1, 0)
+    bar.ZIndex = 8
+
     local label = Instance.new("TextLabel")
     label.Parent = b
     label.BackgroundTransparency = 1
-    label.Position = UDim2.new(0, 12, 0, 0)
-    label.Size = UDim2.new(1, -72, 1, 0)
+    label.Position = UDim2.new(0, 14, 0, 0)
+    label.Size = UDim2.new(1, -90, 1, 0)
     label.Font = Enum.Font.Code
     label.Text = name
     label.TextColor3 = C.text
     label.TextSize = 13
     label.TextXAlignment = Enum.TextXAlignment.Left
-    local pill = Instance.new("Frame")
-    pill.Parent = b
-    pill.AnchorPoint = Vector2.new(1, 0.5)
-    pill.Position = UDim2.new(1, -10, 0.5, 0)
-    pill.Size = UDim2.new(0, 36, 0, 18)
-    pill.BorderSizePixel = 0
-    corner(pill, 11)
-    local dot = Instance.new("Frame")
-    dot.Parent = pill
-    dot.Size = UDim2.new(0, 12, 0, 12)
-    dot.Position = UDim2.new(0, 3, 0.5, -6)
-    dot.BorderSizePixel = 0
-    dot.BackgroundColor3 = C.text
-    corner(dot, 7)
+    label.ZIndex = 8
+
+    local status = Instance.new("TextLabel")
+    status.Parent = b
+    status.BackgroundTransparency = 1
+    status.AnchorPoint = Vector2.new(1, 0.5)
+    status.Position = UDim2.new(1, -10, 0.5, 0)
+    status.Size = UDim2.new(0, 64, 0, 16)
+    status.Font = Enum.Font.Code
+    status.TextSize = 11
+    status.TextXAlignment = Enum.TextXAlignment.Right
+    status.ZIndex = 8
+
     local function paint()
         local on = toggles[key]
-        pill.BackgroundColor3 = on and C.trueState or C.off
-        dot.Position = on and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
-        dot.BackgroundColor3 = on and C.bg or Color3.fromRGB(255, 245, 245)
-        b.BackgroundColor3 = C.panel
-        edge.Color = C.outline
+        status.Text = on and "[ ON ]" or "[ OFF ]"
+        status.TextColor3 = on and C.trueState or C.off
+        bar.BackgroundColor3 = on and C.trueState or C.off
+        b.BackgroundColor3 = on and Color3.fromRGB(0, 18, 22) or C.panel
         edge.Color = on and C.trueState or C.outline
-        edge.Transparency = on and 0.05 or 0.12
+        edge.Transparency = on and 0.35 or 0.2
     end
     paint()
-    b.MouseEnter:Connect(function() if not toggles[key] then b.BackgroundColor3 = C.panel2 end end)
+    b.MouseEnter:Connect(function()
+        if not toggles[key] then
+            b.BackgroundColor3 = C.panel2
+            edge.Color = C.accent
+        end
+    end)
     b.MouseLeave:Connect(paint)
     b.MouseButton1Click:Connect(function()
         toggles[key] = not toggles[key]
@@ -479,7 +725,7 @@ local function createToggle(name, key)
     end)
 end
 
--- Slider controls: click anywhere on the track, drag smoothly, with a live value and thumb.
+-- Slider: thin rail, red fill, diamond thumb and tick marks. Click anywhere on the rail or drag.
 local function createSlider(name, minV, maxV, def, cb)
     local container = Instance.new("Frame")
     container.Parent = scroll
@@ -487,14 +733,20 @@ local function createSlider(name, minV, maxV, def, cb)
     container.Size = UDim2.new(1, -20, 0, 60)
     container.BorderSizePixel = 0
     container.ZIndex = 6
-    corner(container, 2)
     stroke(container, C.outline, 0.15, 1)
+
+    local sideBar = Instance.new("Frame")
+    sideBar.Parent = container
+    sideBar.BackgroundColor3 = C.accentDark
+    sideBar.BorderSizePixel = 0
+    sideBar.Size = UDim2.new(0, 3, 1, 0)
+    sideBar.ZIndex = 7
 
     local lbl = Instance.new("TextLabel")
     lbl.Parent = container
     lbl.BackgroundTransparency = 1
-    lbl.Position = UDim2.new(0, 12, 0, 7)
-    lbl.Size = UDim2.new(1, -88, 0, 19)
+    lbl.Position = UDim2.new(0, 14, 0, 7)
+    lbl.Size = UDim2.new(1, -100, 0, 19)
     lbl.Font = Enum.Font.Code
     lbl.Text = name
     lbl.TextColor3 = C.text
@@ -507,43 +759,70 @@ local function createSlider(name, minV, maxV, def, cb)
     valueBox.AnchorPoint = Vector2.new(1, 0)
     valueBox.Position = UDim2.new(1, -11, 0, 7)
     valueBox.Size = UDim2.new(0, 62, 0, 18)
-    valueBox.BackgroundColor3 = C.panel2
+    valueBox.BackgroundColor3 = C.bg
     valueBox.BorderSizePixel = 0
     valueBox.Font = Enum.Font.Code
     valueBox.TextColor3 = C.accent
     valueBox.TextSize = 11
     valueBox.Text = tostring(def)
     valueBox.ZIndex = 8
-    corner(valueBox, 5)
+    stroke(valueBox, C.outline, 0.2, 1)
 
+    -- Transparent hit area so the rail is easy to click.
     local back = Instance.new("TextButton")
     back.Parent = container
     back.AutoButtonColor = false
     back.Text = ""
-    back.BackgroundColor3 = C.off
-    back.Position = UDim2.new(0, 12, 0, 36)
-    back.Size = UDim2.new(1, -24, 0, 6)
+    back.BackgroundTransparency = 1
+    back.Position = UDim2.new(0, 14, 0, 32)
+    back.Size = UDim2.new(1, -28, 0, 18)
     back.BorderSizePixel = 0
     back.ZIndex = 7
-    corner(back, 4)
 
+    local rail = Instance.new("Frame")
+    rail.Parent = back
+    rail.AnchorPoint = Vector2.new(0, 0.5)
+    rail.Position = UDim2.new(0, 0, 0.5, 0)
+    rail.Size = UDim2.new(1, 0, 0, 4)
+    rail.BackgroundColor3 = Color3.fromRGB(40, 8, 12)
+    rail.BorderSizePixel = 0
+    rail.ZIndex = 7
+
+    local ratio0 = math.clamp((def - minV) / (maxV - minV), 0, 1)
     local fill = Instance.new("Frame")
-    fill.Parent = back
+    fill.Parent = rail
     fill.BackgroundColor3 = C.accent
-    fill.Size = UDim2.new(math.clamp((def - minV) / (maxV - minV), 0, 1), 0, 1, 0)
+    fill.Size = UDim2.new(ratio0, 0, 1, 0)
     fill.BorderSizePixel = 0
     fill.ZIndex = 8
-    corner(fill, 4)
+
+    -- Tick marks every 10%.
+    local ticks = Instance.new("Frame")
+    ticks.Parent = container
+    ticks.BackgroundTransparency = 1
+    ticks.Position = UDim2.new(0, 14, 0, 51)
+    ticks.Size = UDim2.new(1, -28, 0, 4)
+    ticks.ZIndex = 7
+    for i = 0, 10 do
+        local tick = Instance.new("Frame")
+        tick.Parent = ticks
+        tick.AnchorPoint = Vector2.new(0.5, 0)
+        tick.Position = UDim2.new(i / 10, 0, 0, 0)
+        tick.Size = UDim2.new(0, 1, 0, (i % 5 == 0) and 4 or 2)
+        tick.BackgroundColor3 = C.outline
+        tick.BorderSizePixel = 0
+        tick.ZIndex = 7
+    end
 
     local thumb = Instance.new("Frame")
     thumb.Parent = back
     thumb.AnchorPoint = Vector2.new(0.5, 0.5)
-    thumb.Position = UDim2.new(math.clamp((def - minV) / (maxV - minV), 0, 1), 0, 0.5, 0)
-    thumb.Size = UDim2.new(0, 12, 0, 12)
+    thumb.Position = UDim2.new(ratio0, 0, 0.5, 0)
+    thumb.Size = UDim2.new(0, 9, 0, 9)
+    thumb.Rotation = 45
     thumb.BackgroundColor3 = C.text
     thumb.BorderSizePixel = 0
     thumb.ZIndex = 9
-    corner(thumb, 8)
     stroke(thumb, C.accent, 0, 2)
 
     local dragging = false
