@@ -9,6 +9,9 @@ local cg = game:GetService("CoreGui")
 local cam = ws.CurrentCamera
 local lplr = plrs.LocalPlayer
 
+-- Set to true by the Terminate button. Stops loops and blocks all file saving.
+local terminated = false
+
 local flySpeed = 55
 local HttpService = game:GetService("HttpService")
 local settingsFile = "HRSH_MenuSettings.json"
@@ -33,6 +36,7 @@ local toggles = {
     EnemyHP = false,
     PlayerESP = false,
     ItemESP = false,
+    GeneratorESP = false,
     Crosshair = false,
     Fly = false,
     Noclip = false,
@@ -78,6 +82,7 @@ end
 if type(loadedSettings.flySpeed) == "number" then flySpeed = math.clamp(loadedSettings.flySpeed, 1, 200) end
 
 local function saveSettings()
+    if terminated then return false end
     if type(writefile) ~= "function" then return false end
 
     -- JSONEncode cannot serialize Color3 / other Roblox datatypes in cfg.
@@ -572,6 +577,7 @@ createToggle("Enemy HP", "EnemyHP")
 createToggle("Player ESP", "PlayerESP")
 createToggle("My HP", "SelfHP")
 createToggle("Item ESP", "ItemESP")
+createToggle("Generator ESP", "GeneratorESP")
 createToggle("Crosshair", "Crosshair")
 createToggle("Fullbright", "Fullbright")
 createToggle("Instant Interact", "InstantInteract")
@@ -1256,6 +1262,7 @@ local function loadMenuToggleKey()
 end
 
 local function saveMenuToggleKey(keyCode)
+    if terminated then return end
     if type(writefile) == "function" then
         pcall(writefile, menuKeyFile, keyCode.Name)
     end
@@ -1313,6 +1320,7 @@ createToggle("Ultra Potato", "UltraPotato")
 setTab("Main")
 
 uis.InputBegan:Connect(function(input, gpe)
+    if terminated then return end
     if waitingForMenuKey then
         if input.UserInputType == Enum.UserInputType.Keyboard then
             if input.KeyCode == Enum.KeyCode.Escape then
@@ -1726,7 +1734,7 @@ end)
 task.spawn(function()
     local last = toggles.SelfHP
 
-    while true do
+    while not terminated do
         if toggles.SelfHP ~= last then
             last = toggles.SelfHP
             setupSelfHP()
@@ -2015,7 +2023,7 @@ end)
 -- It scans direct Workspace children, so ProximityPrompt activation range
 -- does not control whether an item is detected.
 task.spawn(function()
-    while true do
+    while not terminated do
         if toggles.ItemESP then
             updateItemESP()
         else
@@ -2169,7 +2177,7 @@ local GATHER_MOVE_INTERVAL = 0.04 -- update target position about 25 times/sec f
 task.spawn(function()
     local scanElapsed = GATHER_SCAN_INTERVAL
     local moveElapsed = 0
-    while true do
+    while not terminated do
         local dt = task.wait(0.015)
         if not toggles.GatherNPCs then
             table.clear(gatherCache)
@@ -2228,7 +2236,7 @@ end)
 
 -- Delete corpses loop
 task.spawn(function()
-    while true do
+    while not terminated do
         if toggles.DelCorpses then
             for _, obj in ipairs(ws:GetChildren()) do
                 if obj:IsA("Model") then
@@ -2245,7 +2253,7 @@ end)
 
 -- Target scan loop
 task.spawn(function()
-    while true do
+    while not terminated do
         refreshTargets()
         task.wait(cfg.scanRate)
     end
@@ -2253,6 +2261,7 @@ end)
 
 -- Aim assist + crosshair
 rs.RenderStepped:Connect(function(dt)
+    if terminated then return end
     local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 
     -- Crosshair can now be toggled independently of Aim Assist.
@@ -2403,7 +2412,7 @@ task.spawn(function()
         Enum.HumanoidStateType.FallingDown,
         Enum.HumanoidStateType.Ragdoll
     }
-    while true do
+    while not terminated do
         task.wait(2)
         local i = 0
         for _, obj in ipairs(ws:GetDescendants()) do
@@ -2440,7 +2449,7 @@ end)
 
 -- Instance Optimizer
 task.spawn(function()
-    while true do
+    while not terminated do
         task.wait(5)
         if not toggles.InstanceOptimizer then continue end
         local i = 0
@@ -2524,6 +2533,7 @@ end)
 
 -- F1 Deep Clean
 uis.InputBegan:Connect(function(input, gpe)
+    if terminated then return end
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.F1 then
         local cleaned = 0
@@ -2542,3 +2552,89 @@ uis.InputBegan:Connect(function(input, gpe)
         print("Deep Clean done, removed " .. cleaned .. " parts")
     end
 end)
+
+-- Generator ESP (orange) + Terminate button
+do
+    local GENERATOR_COLOR = Color3.fromRGB(255, 140, 0)
+
+    local function applyGeneratorHighlight(model)
+        local hl = model:FindFirstChild("GeneratorHighlight")
+        if not hl then
+            hl = Instance.new("Highlight")
+            hl.Name = "GeneratorHighlight"
+            hl.Adornee = model
+            hl.Parent = model
+        end
+        hl.FillColor = GENERATOR_COLOR
+        hl.OutlineColor = Color3.fromRGB(255, 200, 120)
+        hl.FillTransparency = 0.4
+        hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Enabled = true
+    end
+
+    local function clearGeneratorESP()
+        for _, v in ipairs(ws:GetDescendants()) do
+            if v:IsA("Highlight") and v.Name == "GeneratorHighlight" then
+                v:Destroy()
+            end
+        end
+    end
+
+    -- Workspace.Map.Generators contains the "Generator" models.
+    task.spawn(function()
+        local wasOn = false
+        while not terminated do
+            if toggles.GeneratorESP then
+                wasOn = true
+                local map = ws:FindFirstChild("Map")
+                local folder = map and map:FindFirstChild("Generators")
+                if folder then
+                    for _, obj in ipairs(folder:GetDescendants()) do
+                        if obj:IsA("Model") and obj.Name == "Generator" then
+                            applyGeneratorHighlight(obj)
+                        end
+                    end
+                end
+            elseif wasOn then
+                wasOn = false
+                clearGeneratorESP()
+            end
+            task.wait(1)
+        end
+    end)
+
+    -- Terminate button (Settings tab)
+    setTab("Settings")
+    createSection("[ DANGER ZONE ]")
+    createActionButton("Terminate", function()
+        -- Stop all saving first, so nothing below can write to the file.
+        terminated = true
+
+        for key in pairs(toggles) do toggles[key] = false end
+        toggles.SelfHP = false
+
+        pcall(stopSpectating)
+        pcall(stopFly)
+        pcall(setNoclip, false)
+        pcall(clearItemESP)
+        pcall(clearGeneratorESP)
+        pcall(removeSelfHP)
+        pcall(function() crossX:Remove(); crossY:Remove() end)
+
+        for _, v in ipairs(ws:GetDescendants()) do
+            if v:IsA("Highlight") and (v.Name == "NPCHighlight" or v.Name == "PlayerHighlight") then
+                v:Destroy()
+            elseif v:IsA("BillboardGui") and (v.Name == "EnemyHPESP" or v.Name == "PlayerInfoESP") then
+                v:Destroy()
+            end
+        end
+
+        local char = lplr.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = 16 end
+
+        gui:Destroy()
+    end)
+    setTab("Main")
+end
