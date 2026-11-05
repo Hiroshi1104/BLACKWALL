@@ -41,6 +41,7 @@ local toggles = {
     NoFog = false,
     CustomFOV = false,
     Freecam = false,
+    ViewLine = false,
     OverheadText = true,
     Crosshair = false,
     Fly = false,
@@ -82,6 +83,7 @@ local cfg = {
     textSize = 13, -- overhead text size
     camFov = 70, -- camera field of view (used by Custom FOV)
     freecamSpeed = 50, -- freecam move speed (studs/second)
+    viewLineLength = 60, -- View Line length in studs
     crosshairSize = 3, -- crosshair dot radius
     crosshairOpacity = 1, -- crosshair dot opacity
     crosshairHue = 0, -- crosshair color hue in degrees
@@ -169,6 +171,7 @@ local function saveSettings()
         textSize = cfg.textSize,
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
+        viewLineLength = cfg.viewLineLength,
         crosshairSize = cfg.crosshairSize,
         crosshairOpacity = cfg.crosshairOpacity,
         crosshairHue = cfg.crosshairHue,
@@ -982,6 +985,9 @@ createToggle("My HP", "SelfHP")
 createToggle("Item ESP", "ItemESP")
 createToggle("Generator ESP", "GeneratorESP")
 createToggle("Head Arrow", "HeadArrow")
+createSection("[ VIEW LINE ]")
+createToggle("View Line", "ViewLine")
+createSlider("View Line Length", 10, 300, cfg.viewLineLength, function(v) cfg.viewLineLength = v end)
 createSection("[ WORLD ]")
 createToggle("Fullbright", "Fullbright")
 createToggle("No Fog", "NoFog")
@@ -3181,6 +3187,78 @@ do
     ESPX.stopFreecam = stopFreecam
 end
 
+-- View Line: a red line from each player's head in the direction their head faces, so you can see
+-- where they are looking. Drawn with the Drawing library (visible through walls). Own block to stay
+-- under the 200-locals limit.
+do
+    local viewLines = {} -- [player] = Drawing line
+
+    local function removeViewLine(plr)
+        local line = viewLines[plr]
+        if line then
+            pcall(function() line:Remove() end)
+            viewLines[plr] = nil
+        end
+    end
+
+    -- Used by the Terminate button and when the toggle is switched off.
+    ESPX.clearViewLines = function()
+        for plr in pairs(viewLines) do removeViewLine(plr) end
+    end
+
+    ESPX.track(plrs.PlayerRemoving:Connect(removeViewLine))
+
+    ESPX.track(rs.RenderStepped:Connect(function()
+        if terminated then return end
+        local camera = ws.CurrentCamera
+        if not toggles.ViewLine or not camera then
+            if next(viewLines) ~= nil then ESPX.clearViewLines() end
+            return
+        end
+
+        local camCF = camera.CFrame
+        local near = 0.2
+        for _, plr in ipairs(plrs:GetPlayers()) do
+            if plr ~= lplr then
+                local char = plr.Character
+                local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local line = viewLines[plr]
+                local show = false
+
+                if head and head:IsA("BasePart") and hum and hum.Health > 0 then
+                    local a = head.Position
+                    local b = a + head.CFrame.LookVector * cfg.viewLineLength
+                    -- Clip the segment to the camera's near plane so it never flips when one end is behind you.
+                    local da = -camCF:PointToObjectSpace(a).Z
+                    local db = -camCF:PointToObjectSpace(b).Z
+                    if da > near or db > near then
+                        local t = (near - da) / (db - da)
+                        if da <= near then
+                            a = a + (b - a) * t
+                        elseif db <= near then
+                            b = a + (b - a) * t
+                        end
+                        local pa = camera:WorldToViewportPoint(a)
+                        local pb = camera:WorldToViewportPoint(b)
+                        if not line then
+                            line = Drawing.new("Line")
+                            line.Thickness = 2
+                            line.Color = Color3.fromRGB(255, 0, 0)
+                            viewLines[plr] = line
+                        end
+                        line.From = Vector2.new(pa.X, pa.Y)
+                        line.To = Vector2.new(pb.X, pb.Y)
+                        show = true
+                    end
+                end
+
+                if line then line.Visible = show end
+            end
+        end
+    end))
+end
+
 -- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
     local function getGeneratorColor()
@@ -3544,6 +3622,7 @@ do
         pcall(clearHeadArrows)
         pcall(ESPX.restoreWorld)
         pcall(ESPX.stopFreecam)
+        pcall(ESPX.clearViewLines)
         pcall(removeSelfHP)
         pcall(function() crossDot:Remove(); crossOutline:Remove() end)
 
