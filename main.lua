@@ -962,10 +962,8 @@ end
 
 -- Main: ESP, targeting, and other visual/utility controls.
 setTab("Main")
-createSection("[ VISUALS & UTILITY ]")
+createSection("[ UTILITY ]")
 createToggle("Aim Assist", "AimAssist")
-createToggle("Crosshair", "Crosshair")
-createToggle("Fullbright", "Fullbright")
 createToggle("Instant Interact", "InstantInteract")
 createToggle("Del Corpses", "DelCorpses")
 createToggle("Gather NPCs", "GatherNPCs")
@@ -973,11 +971,6 @@ createSection("[ AIM SETTINGS ]")
 createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end)
 createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
 createSlider("Gather Distance", 1, 30, cfg.gatherDistance, function(v) cfg.gatherDistance = v end)
-createSection("[ CROSSHAIR SETTINGS ]")
-createSlider("Crosshair Size", 1, 12, cfg.crosshairSize, function(v) cfg.crosshairSize = v end)
-createSlider("Crosshair Opacity", 0, 1, cfg.crosshairOpacity, function(v) cfg.crosshairOpacity = v end)
-createSlider("Crosshair Hue", 0, 360, cfg.crosshairHue, function(v) cfg.crosshairHue = v end)
-createSlider("Crosshair Saturation", 0, 1, cfg.crosshairSat, function(v) cfg.crosshairSat = v end)
 
 -- Visual: every ESP / overlay / on-screen display option lives here.
 setTab("Visual")
@@ -990,9 +983,16 @@ createToggle("Item ESP", "ItemESP")
 createToggle("Generator ESP", "GeneratorESP")
 createToggle("Head Arrow", "HeadArrow")
 createSection("[ WORLD ]")
+createToggle("Fullbright", "Fullbright")
 createToggle("No Fog", "NoFog")
 createToggle("Custom FOV", "CustomFOV")
 createSlider("Camera FOV", 30, 120, cfg.camFov, function(v) cfg.camFov = v end)
+createSection("[ CROSSHAIR ]")
+createToggle("Crosshair", "Crosshair")
+createSlider("Crosshair Size", 1, 12, cfg.crosshairSize, function(v) cfg.crosshairSize = v end)
+createSlider("Crosshair Opacity", 0, 1, cfg.crosshairOpacity, function(v) cfg.crosshairOpacity = v end)
+createSlider("Crosshair Hue", 0, 360, cfg.crosshairHue, function(v) cfg.crosshairHue = v end)
+createSlider("Crosshair Saturation", 0, 1, cfg.crosshairSat, function(v) cfg.crosshairSat = v end)
 createSection("[ OVERHEAD TEXT ]")
 createToggle("Overhead Text", "OverheadText")
 createSlider("Text Opacity", 0, 1, cfg.textOpacity, function(v) cfg.textOpacity = v end)
@@ -1014,15 +1014,18 @@ createSection("[ MOVEMENT ]")
 createToggle("Noclip", "Noclip")
 createToggle("Fly", "Fly")
 createToggle("Speed Modifier", "Speed")
-createToggle("Freecam", "Freecam")
 
 createSection("[ MOVEMENT SETTINGS ]")
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
-createSlider("Freecam Speed", 1, 300, cfg.freecamSpeed, function(v) cfg.freecamSpeed = v end)
 
 -- Overwatch uses one shared player list for teleporting, spectating, and player info.
 setTab("Overwatch")
+
+createSection("[ FREECAM ]")
+createToggle("Freecam", "Freecam")
+createSlider("Freecam Speed", 1, 300, cfg.freecamSpeed, function(v) cfg.freecamSpeed = v end)
+
 local selectedSpectatePlayer = nil
 local updateSpectateInfo
 
