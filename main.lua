@@ -43,6 +43,10 @@ local toggles = {
     Freecam = false,
     ViewLine = false,
     AntiAFK = false,
+    HitboxExtender = false,
+    HitboxHead = true,
+    HitboxBody = false,
+    HitboxLegs = false,
     OverheadText = true,
     Crosshair = false,
     Fly = false,
@@ -85,6 +89,8 @@ local cfg = {
     camFov = 70, -- camera field of view (used by Custom FOV)
     freecamSpeed = 50, -- freecam move speed (studs/second)
     viewLineLength = 60, -- View Line length in studs
+    hitboxSize = 8, -- Hitbox Extender: size (studs) of each extended part
+    hitboxTransparency = 0.7, -- Hitbox Extender: how see-through the extended parts are
     crosshairSize = 3, -- crosshair dot radius
     crosshairOpacity = 1, -- crosshair dot opacity
     crosshairHue = 0, -- crosshair color hue in degrees
@@ -185,6 +191,8 @@ local function saveSettings()
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
         viewLineLength = cfg.viewLineLength,
+        hitboxSize = cfg.hitboxSize,
+        hitboxTransparency = cfg.hitboxTransparency,
         crosshairSize = cfg.crosshairSize,
         crosshairOpacity = cfg.crosshairOpacity,
         crosshairHue = cfg.crosshairHue,
@@ -1004,6 +1012,13 @@ createSection("[ AIM SETTINGS ]")
 createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end, "aimStrength")
 createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end, "fov")
 createSlider("Gather Distance", 1, 30, cfg.gatherDistance, function(v) cfg.gatherDistance = v end, "gatherDistance")
+createSection("[ HITBOX EXTENDER ]")
+createToggle("Hitbox Extender", "HitboxExtender")
+createToggle("Extend Head", "HitboxHead")
+createToggle("Extend Body", "HitboxBody")
+createToggle("Extend Legs", "HitboxLegs")
+createSlider("Hitbox Size", 2, 30, cfg.hitboxSize, function(v) cfg.hitboxSize = v end, "hitboxSize")
+createSlider("Hitbox Transparency", 0, 1, cfg.hitboxTransparency, function(v) cfg.hitboxTransparency = v end, "hitboxTransparency")
 
 -- Visual: every ESP / overlay / on-screen display option lives here.
 setTab("Visual")
@@ -3536,6 +3551,82 @@ do
     end))
 end
 
+-- Hitbox Extender (other players): grows the selected body parts into cubes. Head / Body / Legs can be
+-- chosen independently. This only changes the parts on YOUR client, so it helps in games whose hit
+-- detection runs locally. Own block to stay under the 200-locals limit.
+do
+    local PART_TOGGLE = {Head = "HitboxHead"}
+    for _, name in ipairs({"HumanoidRootPart", "UpperTorso", "LowerTorso", "Torso"}) do
+        PART_TOGGLE[name] = "HitboxBody"
+    end
+    for _, name in ipairs({
+        "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot", -- R15
+        "Left Leg", "Right Leg", -- R6
+    }) do
+        PART_TOGGLE[name] = "HitboxLegs"
+    end
+
+    local originals = {} -- [part] = its original size / transparency / collision settings
+
+    local function restorePart(part)
+        local original = originals[part]
+        if not original then return end
+        if part.Parent then
+            part.Size = original.size
+            part.Transparency = original.transparency
+            part.CanCollide = original.canCollide
+            part.Massless = original.massless
+        end
+        originals[part] = nil
+    end
+
+    local function restoreAll()
+        for part in pairs(originals) do restorePart(part) end
+    end
+
+    -- Used by the Terminate button.
+    ESPX.restoreHitboxes = restoreAll
+
+    task.spawn(function()
+        while not terminated do
+            if toggles.HitboxExtender then
+                local size = Vector3.new(cfg.hitboxSize, cfg.hitboxSize, cfg.hitboxSize)
+                local active = {}
+                for _, plr in ipairs(plrs:GetPlayers()) do
+                    local char = plr ~= lplr and plr.Character
+                    if char then
+                        for _, part in ipairs(char:GetChildren()) do
+                            local toggleKey = PART_TOGGLE[part.Name]
+                            if toggleKey and toggles[toggleKey] and part:IsA("BasePart") then
+                                active[part] = true
+                                if not originals[part] then
+                                    originals[part] = {
+                                        size = part.Size,
+                                        transparency = part.Transparency,
+                                        canCollide = part.CanCollide,
+                                        massless = part.Massless,
+                                    }
+                                end
+                                if part.Size ~= size then part.Size = size end
+                                part.Transparency = cfg.hitboxTransparency
+                                part.CanCollide = false
+                                part.Massless = true
+                            end
+                        end
+                    end
+                end
+                -- Put back anything that is no longer selected (or whose player left / respawned).
+                for part in pairs(originals) do
+                    if not active[part] then restorePart(part) end
+                end
+            elseif next(originals) ~= nil then
+                restoreAll()
+            end
+            task.wait(0.1)
+        end
+    end)
+end
+
 -- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
     local function getGeneratorColor()
@@ -3900,6 +3991,7 @@ do
         pcall(ESPX.restoreWorld)
         pcall(ESPX.stopFreecam)
         pcall(ESPX.clearViewLines)
+        pcall(ESPX.restoreHitboxes)
         pcall(removeSelfHP)
         pcall(function() crossDot:Remove(); crossOutline:Remove() end)
 
