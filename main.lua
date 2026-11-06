@@ -42,6 +42,7 @@ local toggles = {
     CustomFOV = false,
     Freecam = false,
     ViewLine = false,
+    AntiAFK = false,
     OverheadText = true,
     Crosshair = false,
     Fly = false,
@@ -90,6 +91,20 @@ local cfg = {
     crosshairSat = 0, -- crosshair color saturation (0 = white)
 }
 
+-- Shared state table (helper functions are added to it further down).
+local ESPX = {}
+ESPX.toggleList = {}   -- every createToggle(): {name, key}, in creation order
+ESPX.togglePaints = {} -- [key] = function that repaints the toggle
+ESPX.toggleFlips = {}  -- [key] = function that flips the toggle exactly like clicking it
+ESPX.sliders = {}      -- sliders that can be reset: {key, set}
+-- Snapshot of the built-in defaults, taken before saved settings are loaded (for "Reset to Defaults").
+ESPX.defaultToggles = {}
+for key, value in pairs(toggles) do ESPX.defaultToggles[key] = value end
+ESPX.defaultCfg = {}
+for key, value in pairs(cfg) do
+    if type(value) == "number" then ESPX.defaultCfg[key] = value end
+end
+
 -- Restore only known, serializable settings; preserve defaults for missing/invalid values.
 if type(loadedSettings.toggles) == "table" then
     for key, value in pairs(loadedSettings.toggles) do
@@ -104,8 +119,6 @@ end
 if type(loadedSettings.flySpeed) == "number" then flySpeed = math.clamp(loadedSettings.flySpeed, 1, 200) end
 
 -- Shared helpers: overhead text style and ESP colors.
-local ESPX = {}
-
 -- Service connections are registered here so Terminate can disconnect every one of them.
 ESPX.conns = {}
 function ESPX.track(connection)
@@ -595,7 +608,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Settings"}) do
+for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Settings", "Binds"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -625,7 +638,7 @@ for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Settings"
     button.Name = name .. "Tab"
     button.Parent = tabBar
     button.LayoutOrder = order
-    local tabWidths = {Main = 48, Visual = 54, Movement = 64, Overwatch = 78, Settings = 56}
+    local tabWidths = {Main = 46, Visual = 52, Movement = 62, Overwatch = 76, Settings = 54, Binds = 46}
     button.Size = UDim2.new(0, tabWidths[name] or 60, 1, 0)
     button.BackgroundColor3 = C.panel
     button.BorderSizePixel = 0
@@ -745,7 +758,7 @@ local function createActionButton(name, callback)
     end)
     b.MouseButton1Click:Connect(function()
         local ok, message = pcall(callback)
-        b.Text = prefix .. name .. (ok and "  [DONE]" or "  [ERROR]")
+        b.Text = prefix .. name .. "  " .. (ok and (type(message) == "string" and message or "[DONE]") or "[ERROR]")
         if not ok then warn("[BLACKWALL] " .. tostring(message)) end
         task.delay(1.5, function()
             if b and b.Parent then b.Text = prefix .. name end
@@ -815,7 +828,7 @@ local function createToggle(name, key)
         end
     end)
     b.MouseLeave:Connect(paint)
-    b.MouseButton1Click:Connect(function()
+    local function flip()
         toggles[key] = not toggles[key]
         saveSettings()
         paint()
@@ -824,11 +837,15 @@ local function createToggle(name, key)
                 if v.Name == "NPCHighlight" then v:Destroy() end
             end
         end
-    end)
+    end
+    ESPX.toggleList[#ESPX.toggleList + 1] = {name = name, key = key}
+    ESPX.togglePaints[key] = paint
+    ESPX.toggleFlips[key] = flip
+    b.MouseButton1Click:Connect(flip)
 end
 
 -- Slider: thin rail, red fill, diamond thumb and tick marks. Click anywhere on the rail or drag.
-local function createSlider(name, minV, maxV, def, cb)
+local function createSlider(name, minV, maxV, def, cb, key)
     local container = Instance.new("Frame")
     container.Parent = scroll
     container.BackgroundColor3 = C.panel
@@ -941,6 +958,18 @@ local function createSlider(name, minV, maxV, def, cb)
         if cb then cb(val) end
         ESPX.queueSave()
     end
+    if key then
+        ESPX.sliders[#ESPX.sliders + 1] = {
+            key = key,
+            set = function(val) -- used by Reset to Defaults (does not write the settings file)
+                local ratio = math.clamp((val - minV) / (maxV - minV), 0, 1)
+                fill.Size = UDim2.new(ratio, 0, 1, 0)
+                thumb.Position = UDim2.new(ratio, 0, 0.5, 0)
+                valueBox.Text = tostring(val)
+                if cb then cb(val) end
+            end,
+        }
+    end
     back.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
@@ -968,12 +997,13 @@ setTab("Main")
 createSection("[ UTILITY ]")
 createToggle("Aim Assist", "AimAssist")
 createToggle("Instant Interact", "InstantInteract")
+createToggle("Anti AFK", "AntiAFK")
 createToggle("Del Corpses", "DelCorpses")
 createToggle("Gather NPCs", "GatherNPCs")
 createSection("[ AIM SETTINGS ]")
-createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end)
-createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end)
-createSlider("Gather Distance", 1, 30, cfg.gatherDistance, function(v) cfg.gatherDistance = v end)
+createSlider("Aim Strength", 0.01, 1.0, cfg.aimStrength, function(v) cfg.aimStrength = v end, "aimStrength")
+createSlider("FOV", 10, 300, cfg.fov, function(v) cfg.fov = v end, "fov")
+createSlider("Gather Distance", 1, 30, cfg.gatherDistance, function(v) cfg.gatherDistance = v end, "gatherDistance")
 
 -- Visual: every ESP / overlay / on-screen display option lives here.
 setTab("Visual")
@@ -987,32 +1017,32 @@ createToggle("Generator ESP", "GeneratorESP")
 createToggle("Head Arrow", "HeadArrow")
 createSection("[ VIEW LINE ]")
 createToggle("View Line", "ViewLine")
-createSlider("View Line Length", 10, 300, cfg.viewLineLength, function(v) cfg.viewLineLength = v end)
+createSlider("View Line Length", 10, 300, cfg.viewLineLength, function(v) cfg.viewLineLength = v end, "viewLineLength")
 createSection("[ WORLD ]")
 createToggle("Fullbright", "Fullbright")
 createToggle("No Fog", "NoFog")
 createToggle("Custom FOV", "CustomFOV")
-createSlider("Camera FOV", 30, 120, cfg.camFov, function(v) cfg.camFov = v end)
+createSlider("Camera FOV", 30, 120, cfg.camFov, function(v) cfg.camFov = v end, "camFov")
 createSection("[ CROSSHAIR ]")
 createToggle("Crosshair", "Crosshair")
-createSlider("Crosshair Size", 1, 12, cfg.crosshairSize, function(v) cfg.crosshairSize = v end)
-createSlider("Crosshair Opacity", 0, 1, cfg.crosshairOpacity, function(v) cfg.crosshairOpacity = v end)
-createSlider("Crosshair Hue", 0, 360, cfg.crosshairHue, function(v) cfg.crosshairHue = v end)
-createSlider("Crosshair Saturation", 0, 1, cfg.crosshairSat, function(v) cfg.crosshairSat = v end)
+createSlider("Crosshair Size", 1, 12, cfg.crosshairSize, function(v) cfg.crosshairSize = v end, "crosshairSize")
+createSlider("Crosshair Opacity", 0, 1, cfg.crosshairOpacity, function(v) cfg.crosshairOpacity = v end, "crosshairOpacity")
+createSlider("Crosshair Hue", 0, 360, cfg.crosshairHue, function(v) cfg.crosshairHue = v end, "crosshairHue")
+createSlider("Crosshair Saturation", 0, 1, cfg.crosshairSat, function(v) cfg.crosshairSat = v end, "crosshairSat")
 createSection("[ OVERHEAD TEXT ]")
 createToggle("Overhead Text", "OverheadText")
-createSlider("Text Opacity", 0, 1, cfg.textOpacity, function(v) cfg.textOpacity = v end)
-createSlider("Text Size", 8, 24, cfg.textSize, function(v) cfg.textSize = v end)
+createSlider("Text Opacity", 0, 1, cfg.textOpacity, function(v) cfg.textOpacity = v end, "textOpacity")
+createSlider("Text Size", 8, 24, cfg.textSize, function(v) cfg.textSize = v end, "textSize")
 createSection("[ NPC ESP SETTINGS ]")
-createSlider("NPC Fill Opacity", 0, 1, cfg.npcFillOpacity, function(v) cfg.npcFillOpacity = v end)
-createSlider("NPC Outline Opacity", 0, 1, cfg.npcOutlineOpacity, function(v) cfg.npcOutlineOpacity = v end)
+createSlider("NPC Fill Opacity", 0, 1, cfg.npcFillOpacity, function(v) cfg.npcFillOpacity = v end, "npcFillOpacity")
+createSlider("NPC Outline Opacity", 0, 1, cfg.npcOutlineOpacity, function(v) cfg.npcOutlineOpacity = v end, "npcOutlineOpacity")
 createSection("[ PLAYER ESP SETTINGS ]")
-createSlider("Player Fill Opacity", 0, 1, cfg.playerFillOpacity, function(v) cfg.playerFillOpacity = v end)
-createSlider("Player Outline Opacity", 0, 1, cfg.playerOutlineOpacity, function(v) cfg.playerOutlineOpacity = v end)
+createSlider("Player Fill Opacity", 0, 1, cfg.playerFillOpacity, function(v) cfg.playerFillOpacity = v end, "playerFillOpacity")
+createSlider("Player Outline Opacity", 0, 1, cfg.playerOutlineOpacity, function(v) cfg.playerOutlineOpacity = v end, "playerOutlineOpacity")
 createSection("[ GENERATOR ESP SETTINGS ]")
-createSlider("Fill Opacity", 0, 1, cfg.genFillOpacity, function(v) cfg.genFillOpacity = v end)
-createSlider("Outline Opacity", 0, 1, cfg.genOutlineOpacity, function(v) cfg.genOutlineOpacity = v end)
-createSlider("Color Hue", 0, 360, cfg.genHue, function(v) cfg.genHue = v end)
+createSlider("Fill Opacity", 0, 1, cfg.genFillOpacity, function(v) cfg.genFillOpacity = v end, "genFillOpacity")
+createSlider("Outline Opacity", 0, 1, cfg.genOutlineOpacity, function(v) cfg.genOutlineOpacity = v end, "genOutlineOpacity")
+createSlider("Color Hue", 0, 360, cfg.genHue, function(v) cfg.genHue = v end, "genHue")
 
 -- Movement: movement toggles and speed controls.
 setTab("Movement")
@@ -1022,15 +1052,25 @@ createToggle("Fly", "Fly")
 createToggle("Speed Modifier", "Speed")
 
 createSection("[ MOVEMENT SETTINGS ]")
-createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end)
-createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end)
+createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end, "speed")
+createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end, "flySpeed")
 
 -- Overwatch uses one shared player list for teleporting, spectating, and player info.
 setTab("Overwatch")
 
 createSection("[ FREECAM ]")
 createToggle("Freecam", "Freecam")
-createSlider("Freecam Speed", 1, 300, cfg.freecamSpeed, function(v) cfg.freecamSpeed = v end)
+createSlider("Freecam Speed", 1, 300, cfg.freecamSpeed, function(v) cfg.freecamSpeed = v end, "freecamSpeed")
+createActionButton("Teleport to Freecam Position", function()
+    local target = ESPX.getFreecamPos and ESPX.getFreecamPos()
+    if not target then error("Turn Freecam on first") end
+    local character = lplr.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then error("Your character is unavailable") end
+    -- Keep your current facing, move to where the camera is, and drop any leftover momentum.
+    root.CFrame = CFrame.new(target) * (root.CFrame - root.CFrame.Position)
+    root.AssemblyLinearVelocity = Vector3.zero
+end)
 
 local selectedSpectatePlayer = nil
 local updateSpectateInfo
@@ -1748,6 +1788,227 @@ createToggle("Low Visuals", "LowVisuals")
 createToggle("Instance Optimizer", "InstanceOptimizer")
 createToggle("Particle Cap", "ParticleCap")
 createToggle("Ultra Potato", "UltraPotato")
+
+-- Config: put every toggle and slider back to its built-in default (keybinds are left alone).
+function ESPX.resetToDefaults()
+    for key, value in pairs(ESPX.defaultCfg) do cfg[key] = value end
+    for _, entry in ipairs(ESPX.toggleList) do
+        local key = entry.key
+        local default = ESPX.defaultToggles[key] == true
+        if toggles[key] ~= default then
+            toggles[key] = default
+            ESPX.togglePaints[key]()
+            if key == "ESP" and not default then
+                for _, v in ipairs(ws:GetDescendants()) do
+                    if v.Name == "NPCHighlight" then v:Destroy() end
+                end
+            end
+        end
+    end
+    for _, slider in ipairs(ESPX.sliders) do
+        local default = (slider.key == "flySpeed") and 55 or ESPX.defaultCfg[slider.key]
+        if default ~= nil then slider.set(default) end
+    end
+    saveSettings()
+end
+
+createSection("[ CONFIG ]")
+createActionButton("Reset to Defaults", function()
+    -- Two clicks within 3 seconds, so a stray click cannot wipe your settings.
+    if os.clock() - (ESPX.resetArmedAt or -10) > 3 then
+        ESPX.resetArmedAt = os.clock()
+        return "[CLICK AGAIN]"
+    end
+    ESPX.resetArmedAt = nil
+    ESPX.resetToDefaults()
+    return "[RESET]"
+end)
+
+-- Server tools. The server list needs an executor HTTP function (request / http_request / HttpGet).
+function ESPX.httpGet(url)
+    local requestFn = (type(request) == "function" and request)
+        or (type(http_request) == "function" and http_request)
+        or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+    if requestFn then
+        local response = requestFn({Url = url, Method = "GET"})
+        if response and response.Body then return response.Body end
+    end
+    local ok, body = pcall(function() return game:HttpGet(url) end)
+    if ok and type(body) == "string" then return body end
+    error("No HTTP request function available in this executor")
+end
+
+function ESPX.rejoin()
+    local teleportService = game:GetService("TeleportService")
+    if #plrs:GetPlayers() <= 1 then
+        teleportService:Teleport(game.PlaceId, lplr) -- alone in the server: a new one is created
+    else
+        teleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, lplr)
+    end
+end
+
+function ESPX.serverHop()
+    local teleportService = game:GetService("TeleportService")
+    local url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100", game.PlaceId)
+    local data = HttpService:JSONDecode(ESPX.httpGet(url))
+    local choices = {}
+    for _, server in ipairs(data.data or {}) do
+        if server.id ~= game.JobId and server.playing and server.maxPlayers and server.playing < server.maxPlayers then
+            choices[#choices + 1] = server.id
+        end
+    end
+    if #choices == 0 then error("No other open servers found") end
+    teleportService:TeleportToPlaceInstance(game.PlaceId, choices[math.random(#choices)], lplr)
+end
+
+createSection("[ SERVER ]")
+createActionButton("Rejoin Server", function() ESPX.rejoin() end)
+createActionButton("Server Hop", function() ESPX.serverHop() end)
+
+-- Per-feature keybinds: any toggle in the menu can be bound to a key (saved in HRSH_MenuBinds.json).
+do
+    local bindsFile = "HRSH_MenuBinds.json"
+    local keyButtons = {} -- [toggleKey] = TextButton showing the bound key
+    ESPX.binds = {}       -- [toggleKey] = KeyCode name
+    ESPX.bindWaiting = nil
+
+    local function showBind(key)
+        local button = keyButtons[key]
+        if not button then return end
+        if ESPX.bindWaiting == key then
+            button.Text = "PRESS KEY"
+            button.TextColor3 = C.trueState
+        else
+            local keyName = ESPX.binds[key]
+            button.Text = keyName and string.upper(keyName) or "NONE"
+            button.TextColor3 = keyName and C.accent or C.muted
+        end
+    end
+
+    local function saveBinds()
+        if terminated or type(writefile) ~= "function" then return end
+        pcall(function() writefile(bindsFile, HttpService:JSONEncode(ESPX.binds)) end)
+    end
+
+    local function loadBinds()
+        if type(isfile) ~= "function" or type(readfile) ~= "function" then return end
+        local ok, exists = pcall(isfile, bindsFile)
+        if not (ok and exists) then return end
+        local readOk, raw = pcall(readfile, bindsFile)
+        if not (readOk and type(raw) == "string") then return end
+        local decodeOk, data = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not (decodeOk and type(data) == "table") then return end
+        for key, keyName in pairs(data) do
+            if type(key) == "string" and type(keyName) == "string" and ESPX.toggleFlips[key] then
+                local valid, keyCode = pcall(function() return Enum.KeyCode[keyName] end)
+                if valid and keyCode then ESPX.binds[key] = keyName end
+            end
+        end
+    end
+
+    setTab("Binds")
+    createSection("[ FEATURE KEYBINDS ]")
+    local hint = Instance.new("TextLabel")
+    hint.Parent = scroll
+    hint.BackgroundTransparency = 1
+    hint.Size = UDim2.new(1, -20, 0, 30)
+    hint.Font = Enum.Font.Code
+    hint.Text = "Click a key box, then press a key. Esc clears it."
+    hint.TextColor3 = C.muted
+    hint.TextSize = 10
+    hint.TextWrapped = true
+    hint.TextXAlignment = Enum.TextXAlignment.Left
+    hint.ZIndex = 7
+
+    for _, entry in ipairs(ESPX.toggleList) do
+        local row = Instance.new("Frame")
+        row.Parent = scroll
+        row.BackgroundColor3 = C.panel
+        row.BorderSizePixel = 0
+        row.Size = UDim2.new(1, -20, 0, 30)
+        row.ZIndex = 7
+        stroke(row, C.outline, 0.2, 1)
+        local rowBar = Instance.new("Frame")
+        rowBar.Parent = row
+        rowBar.BackgroundColor3 = C.accentDark
+        rowBar.BorderSizePixel = 0
+        rowBar.Size = UDim2.new(0, 3, 1, 0)
+        rowBar.ZIndex = 8
+        local rowLabel = Instance.new("TextLabel")
+        rowLabel.Parent = row
+        rowLabel.BackgroundTransparency = 1
+        rowLabel.Position = UDim2.new(0, 14, 0, 0)
+        rowLabel.Size = UDim2.new(1, -120, 1, 0)
+        rowLabel.Font = Enum.Font.Code
+        rowLabel.Text = entry.name
+        rowLabel.TextColor3 = C.text
+        rowLabel.TextSize = 12
+        rowLabel.TextXAlignment = Enum.TextXAlignment.Left
+        rowLabel.ZIndex = 8
+        local keyButton = Instance.new("TextButton")
+        keyButton.Parent = row
+        keyButton.AnchorPoint = Vector2.new(1, 0.5)
+        keyButton.Position = UDim2.new(1, -8, 0.5, 0)
+        keyButton.Size = UDim2.new(0, 92, 0, 20)
+        keyButton.BackgroundColor3 = C.bg
+        keyButton.BorderSizePixel = 0
+        keyButton.AutoButtonColor = false
+        keyButton.Font = Enum.Font.Code
+        keyButton.TextSize = 11
+        keyButton.ZIndex = 8
+        stroke(keyButton, C.outline, 0.2, 1)
+        keyButtons[entry.key] = keyButton
+        keyButton.MouseButton1Click:Connect(function()
+            local previous = ESPX.bindWaiting
+            ESPX.bindWaiting = entry.key
+            if previous then showBind(previous) end
+            showBind(entry.key)
+        end)
+    end
+
+    createActionButton("Clear All Keybinds", function()
+        ESPX.binds = {}
+        ESPX.bindWaiting = nil
+        for key in pairs(keyButtons) do showBind(key) end
+        saveBinds()
+    end)
+
+    loadBinds()
+    for key in pairs(keyButtons) do showBind(key) end
+
+    ESPX.track(uis.InputBegan:Connect(function(input, gpe)
+        if terminated or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+        -- Capturing a new bind.
+        local waiting = ESPX.bindWaiting
+        if waiting then
+            ESPX.bindWaiting = nil
+            if input.KeyCode == Enum.KeyCode.Escape then
+                ESPX.binds[waiting] = nil
+            elseif input.KeyCode ~= Enum.KeyCode.Unknown then
+                for otherKey, otherName in pairs(ESPX.binds) do
+                    if otherName == input.KeyCode.Name and otherKey ~= waiting then
+                        ESPX.binds[otherKey] = nil
+                        showBind(otherKey)
+                    end
+                end
+                ESPX.binds[waiting] = input.KeyCode.Name
+            end
+            showBind(waiting)
+            saveBinds()
+            return
+        end
+
+        -- Using a bind (ignored while typing in chat or choosing the menu key).
+        if gpe or waitingForMenuKey then return end
+        for key, keyName in pairs(ESPX.binds) do
+            if input.KeyCode.Name == keyName then
+                local flip = ESPX.toggleFlips[key]
+                if flip then flip() end
+            end
+        end
+    end))
+end
 setTab("Main")
 
 ESPX.track(uis.InputBegan:Connect(function(input, gpe)
@@ -3185,6 +3446,10 @@ do
 
     -- Used by the Terminate button.
     ESPX.stopFreecam = stopFreecam
+    ESPX.getFreecamPos = function()
+        if fc.active then return fc.pos end
+        return nil
+    end
 end
 
 -- View Line: a red line from each player's head in the direction their head faces, so you can see
@@ -3256,6 +3521,18 @@ do
                 if line then line.Visible = show end
             end
         end
+    end))
+end
+
+-- Anti AFK: answers Roblox's idle check so you are not kicked after 20 minutes without input.
+do
+    local virtualUser = game:GetService("VirtualUser")
+    ESPX.track(lplr.Idled:Connect(function()
+        if terminated or not toggles.AntiAFK then return end
+        pcall(function()
+            virtualUser:CaptureController()
+            virtualUser:ClickButton2(Vector2.new())
+        end)
     end))
 end
 
