@@ -51,8 +51,9 @@ local toggles = {
     RemoveNearBlur = false,
     CustomDoF = false,
     DoFAutoFocus = false,
-    RecoilScale = false,
     GunFOV = false,
+    Ragdoll = false,
+    Sit = false,
     OverheadText = true,
     Crosshair = false,
     Fly = false,
@@ -102,7 +103,6 @@ local cfg = {
     dofFocusDistance = 10, -- Custom DoF: distance (studs) that is perfectly sharp (also the Auto Focus fallback)
     dofFocusRadius = 5, -- Custom DoF: depth around the focus distance that stays sharp
     dofLayers = 1, -- Custom DoF: how many effects are stacked (stronger blur)
-    recoilScale = 0.5, -- Recoil Scale: 1 = normal recoil, 0 = none
     gunFov = 90, -- Gun FOV: camera FOV while holding a gun (not aiming)
     crosshairSize = 3, -- crosshair dot radius
     crosshairOpacity = 1, -- crosshair dot opacity
@@ -131,6 +131,8 @@ if type(loadedSettings.toggles) == "table" then
     end
 end
 toggles.RemoveUI = false -- never start with the game UI hidden, even if it was on when last saved
+toggles.Ragdoll = false -- never start ragdolled or sitting
+toggles.Sit = false
 if type(loadedSettings.cfg) == "table" then
     for key, value in pairs(loadedSettings.cfg) do
         if type(cfg[key]) == "number" and type(value) == "number" then cfg[key] = value end
@@ -212,7 +214,6 @@ local function saveSettings()
         dofFocusDistance = cfg.dofFocusDistance,
         dofFocusRadius = cfg.dofFocusRadius,
         dofLayers = cfg.dofLayers,
-        recoilScale = cfg.recoilScale,
         gunFov = cfg.gunFov,
         crosshairSize = cfg.crosshairSize,
         crosshairOpacity = cfg.crosshairOpacity,
@@ -517,7 +518,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: GUN-MODS-3"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: FUN-TAB-2"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -574,7 +575,7 @@ local tabLayout = Instance.new("UIListLayout")
 tabLayout.Parent = tabBar
 tabLayout.FillDirection = Enum.FillDirection.Horizontal
 tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabLayout.Padding = UDim.new(0, 5)
+tabLayout.Padding = UDim.new(0, 3)
 tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 
 local tabDivider = Instance.new("Frame")
@@ -637,7 +638,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Settings", "Binds"}) do
+for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Fun", "Settings", "Binds"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -667,7 +668,7 @@ for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Settings"
     button.Name = name .. "Tab"
     button.Parent = tabBar
     button.LayoutOrder = order
-    local tabWidths = {Main = 46, Visual = 52, Movement = 62, Overwatch = 76, Settings = 54, Binds = 46}
+    local tabWidths = {Main = 40, Visual = 46, Movement = 58, Overwatch = 72, Fun = 34, Settings = 52, Binds = 42}
     button.Size = UDim2.new(0, tabWidths[name] or 60, 1, 0)
     button.BackgroundColor3 = C.panel
     button.BorderSizePixel = 0
@@ -1042,9 +1043,6 @@ createToggle("Extend Legs", "HitboxLegs")
 createSlider("Hitbox Size", 2, 30, cfg.hitboxSize, function(v) cfg.hitboxSize = v end, "hitboxSize")
 createSlider("Hitbox Transparency", 0, 1, cfg.hitboxTransparency, function(v) cfg.hitboxTransparency = v end, "hitboxTransparency")
 createSection("[ GUN ]")
-createToggle("Recoil Scale", "RecoilScale")
-createSlider("Recoil Amount", 0, 1, cfg.recoilScale, function(v) cfg.recoilScale = v end, "recoilScale")
-createActionButton("Check Recoil", function() return ESPX.checkRecoil() end)
 createToggle("Gun FOV", "GunFOV")
 createSlider("Gun FOV Value", 30, 120, cfg.gunFov, function(v) cfg.gunFov = v end, "gunFov")
 
@@ -1769,6 +1767,13 @@ end))
 
 -- Gun tab and its obsolete weapon features have been removed.
 
+-- Fun: just-for-fun character toys.
+setTab("Fun")
+createSection("[ FUN ]")
+createToggle("Ragdoll", "Ragdoll")
+createToggle("Sit", "Sit")
+createActionButton("Inspect Game Ragdoll", function() return ESPX.inspectRagdoll() end)
+
 -- Settings: menu keybind and performance controls.
 setTab("Settings")
 -- UI-only keybind selector for showing/hiding this menu.
@@ -1920,231 +1925,9 @@ function ESPX.serverHop()
     teleportService:TeleportToPlaceInstance(game.PlaceId, choices[math.random(#choices)], lplr)
 end
 
--- TEMPORARY debug helper: prints the structure of your equipped gun and any ACS folders (names, classes,
--- attributes, Value objects, remote names) to the console and clipboard. It only reads names and values;
--- it does not read script source or hook anything.
-function ESPX.dumpGunInfo()
-    local lines = {}
-    local MAX_LINES = 800
-    local function add(text)
-        if #lines < MAX_LINES then
-            lines[#lines + 1] = text
-        elseif #lines == MAX_LINES then
-            lines[#lines + 1] = "... (output truncated)"
-        end
-    end
-
-    -- Visual / helper instances are only counted, so the dump stays readable.
-    local NOISE = {
-        "ParticleEmitter", "Attachment", "Motor6D", "Weld", "WeldConstraint", "SurfaceAppearance", "Decal",
-        "Texture", "Trail", "Beam", "SpecialMesh", "PointLight", "SpotLight", "SurfaceLight", "Highlight",
-        "Sound", "Animation", "UICorner", "UIStroke", "UIListLayout",
-    }
-    local function isNoise(inst)
-        for _, className in ipairs(NOISE) do
-            if inst:IsA(className) then return true end
-        end
-        return false
-    end
-
-    local function describe(inst, depth)
-        local line = string.rep("  ", depth) .. inst.Name .. " [" .. inst.ClassName .. "]"
-        if inst:IsA("ValueBase") then
-            pcall(function() line = line .. " = " .. tostring(inst.Value) end)
-        end
-        for attrName, attrValue in pairs(inst:GetAttributes()) do
-            line = line .. "  @" .. attrName .. "=" .. tostring(attrValue)
-        end
-        add(line)
-    end
-
-    local function walk(root, depth, maxDepth)
-        describe(root, depth)
-        local hidden = 0
-        local children = root:GetChildren()
-        if depth >= maxDepth then
-            if #children > 0 then add(string.rep("  ", depth + 1) .. "... (" .. #children .. " children not shown)") end
-            return
-        end
-        for _, child in ipairs(children) do
-            if isNoise(child) then
-                hidden += 1
-            else
-                walk(child, depth + 1, maxDepth)
-            end
-        end
-        if hidden > 0 then add(string.rep("  ", depth + 1) .. "(" .. hidden .. " visual/helper instances hidden)") end
-    end
-
-    add("PlaceId: " .. tostring(game.PlaceId))
-
-    -- 1) The gun you are holding (or the first tool in your backpack).
-    local character = lplr.Character
-    local backpack = lplr:FindFirstChildOfClass("Backpack")
-    local tools = {}
-    if character then
-        for _, child in ipairs(character:GetChildren()) do
-            if child:IsA("Tool") then tools[#tools + 1] = child end
-        end
-    end
-    if backpack then
-        for _, child in ipairs(backpack:GetChildren()) do
-            if child:IsA("Tool") then tools[#tools + 1] = child end
-        end
-    end
-    add("")
-    add("== YOUR TOOLS ==")
-    if #tools == 0 then
-        add("(no tools found - equip or pick up a gun, then press the button again)")
-    end
-    for index, tool in ipairs(tools) do
-        if index == 1 then
-            walk(tool, 0, 6) -- full structure for the first tool (the equipped one is listed first)
-        else
-            describe(tool, 0)
-        end
-    end
-
-    -- 2) ACS containers in ReplicatedStorage.
-    add("")
-    add("== ACS CONTAINERS (ReplicatedStorage) ==")
-    local replicated = game:GetService("ReplicatedStorage")
-    local foundAcs = false
-    for _, child in ipairs(replicated:GetChildren()) do
-        if string.find(string.lower(child.Name), "acs", 1, true) then
-            foundAcs = true
-            walk(child, 0, 3)
-        end
-    end
-    if not foundAcs then add("(nothing named ACS in ReplicatedStorage)") end
-
-    -- 3) Remote / bindable names (paths only).
-    add("")
-    add("== REMOTES / BINDABLES (ReplicatedStorage and your tools) ==")
-    local remoteCount = 0
-    local function scanRemotes(root)
-        for _, d in ipairs(root:GetDescendants()) do
-            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("BindableEvent") or d:IsA("BindableFunction") then
-                remoteCount += 1
-                if remoteCount <= 150 then add(d.ClassName .. "  " .. d:GetFullName()) end
-            end
-        end
-    end
-    scanRemotes(replicated)
-    for _, tool in ipairs(tools) do scanRemotes(tool) end
-    if remoteCount > 150 then add("... (" .. (remoteCount - 150) .. " more not shown)") end
-
-    -- 4) Script names (not source) related to ACS in your character / PlayerGui.
-    add("")
-    add("== ACS SCRIPTS IN YOUR CHARACTER / PLAYERGUI (names only) ==")
-    local scriptCount = 0
-    local function scanScripts(root)
-        if not root then return end
-        for _, d in ipairs(root:GetDescendants()) do
-            if (d:IsA("LocalScript") or d:IsA("Script") or d:IsA("ModuleScript"))
-                and string.find(string.lower(d.Name), "acs", 1, true) then
-                scriptCount += 1
-                if scriptCount <= 60 then add(d.ClassName .. "  " .. d:GetFullName()) end
-            end
-        end
-    end
-    scanScripts(character)
-    scanScripts(lplr:FindFirstChildOfClass("PlayerGui"))
-    if scriptCount == 0 then add("(none found)") end
-
-    local text = table.concat(lines, "\n")
-    print(text)
-    local copyFn = setclipboard or toclipboard
-    if type(copyFn) == "function" then pcall(copyFn, text) end
-    return "[" .. #lines .. " LINES]"
-end
-
--- TEMPORARY debug helper: prints the values stored in the equipped gun's ACS_Settings module and in
--- ACS_Engine's GameRules.Config (read only), so we can see which fields exist (recoil, camera, FOV ...).
-function ESPX.dumpGunSettings()
-    local lines = {}
-    local MAX_LINES = 500
-    local function add(text)
-        if #lines < MAX_LINES then
-            lines[#lines + 1] = text
-        elseif #lines == MAX_LINES then
-            lines[#lines + 1] = "... (output truncated)"
-        end
-    end
-
-    local function format(value)
-        local kind = typeof(value)
-        if kind == "function" then return "<function>" end
-        return tostring(value) .. "  (" .. kind .. ")"
-    end
-
-    local function dumpTable(tbl, depth, seen)
-        local keys = {}
-        for key in pairs(tbl) do keys[#keys + 1] = key end
-        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-        for _, key in ipairs(keys) do
-            local value = tbl[key]
-            local indent = string.rep("  ", depth)
-            if type(value) == "table" then
-                if seen[value] or depth >= 3 then
-                    add(indent .. tostring(key) .. " = <table, not expanded>")
-                else
-                    seen[value] = true
-                    add(indent .. tostring(key) .. " = {")
-                    dumpTable(value, depth + 1, seen)
-                    add(indent .. "}")
-                end
-            else
-                add(indent .. tostring(key) .. " = " .. format(value))
-            end
-        end
-    end
-
-    local function dumpModule(label, moduleScript)
-        add("== " .. label .. " (" .. moduleScript:GetFullName() .. ") ==")
-        local ok, result = pcall(require, moduleScript)
-        if not ok then
-            add("(could not read it: " .. tostring(result) .. ")")
-        elseif type(result) == "table" then
-            dumpTable(result, 0, {[result] = true})
-        else
-            add(format(result))
-        end
-        add("")
-    end
-
-    local character = lplr.Character
-    local tool = character and character:FindFirstChildOfClass("Tool")
-    if tool and tool:FindFirstChild("ACS_Settings") and tool.ACS_Settings:IsA("ModuleScript") then
-        dumpModule("GUN SETTINGS: " .. tool.Name, tool.ACS_Settings)
-    else
-        add("(equip a gun first to read its ACS_Settings)")
-        add("")
-    end
-
-    local engine = game:GetService("ReplicatedStorage"):FindFirstChild("ACS_Engine")
-    local rules = engine and engine:FindFirstChild("GameRules")
-    local config = rules and rules:FindFirstChild("Config")
-    if config and config:IsA("ModuleScript") then
-        dumpModule("ACS GAME RULES CONFIG", config)
-    else
-        add("(ACS_Engine.GameRules.Config not found)")
-    end
-
-    local text = table.concat(lines, "\n")
-    print(text)
-    local copyFn = setclipboard or toclipboard
-    if type(copyFn) == "function" then pcall(copyFn, text) end
-    return "[" .. #lines .. " LINES]"
-end
-
 createSection("[ SERVER ]")
 createActionButton("Rejoin Server", function() ESPX.rejoin() end)
 createActionButton("Server Hop", function() ESPX.serverHop() end)
-
-createSection("[ DEBUG ]")
-createActionButton("Dump ACS Gun Info", function() return ESPX.dumpGunInfo() end)
-createActionButton("Dump Gun Settings", function() return ESPX.dumpGunSettings() end)
 
 -- Per-feature keybinds: any toggle in the menu can be bound to a key (saved in HRSH_MenuBinds.json).
 do
@@ -4114,162 +3897,16 @@ do
     end
 end
 
--- Gun mods for ACS guns (client side only): scales the recoil values of the equipped gun (camera kick and
--- gun-model kick), and sets the camera FOV while a gun is held. Damage, ammo and fire rate are not touched.
--- The gun's script may work on a copy of its ACS_Settings made when you equip it, so the live copies are
--- looked up with getgc (when the executor has it) and scaled too. Own block to stay under the 200-locals limit.
+-- Gun FOV (client side only): camera FOV while an ACS gun is held. Own block to stay under the 200-locals limit.
 do
-    local RECOIL_GROUPS = {"camRecoil", "gunRecoil"}
-    local originals = setmetatable({}, {__mode = "k"}) -- [settings table] = {[group] = {[direction] = {min, max}}}
-    local copies = {}  -- live copies of the settings found on the heap (see scanHeap)
-    local hasGetGc = type(getgc) == "function"
-
-    local function getEquippedGun()
+    local function holdingGun()
         local character = lplr.Character
         local tool = character and character:FindFirstChildOfClass("Tool")
         local settingsModule = tool and tool:FindFirstChild("ACS_Settings")
-        if settingsModule and settingsModule:IsA("ModuleScript") then
-            return tool, settingsModule
-        end
-        return nil
+        return settingsModule ~= nil and settingsModule:IsA("ModuleScript")
     end
 
-    -- Scales every min/max pair in camRecoil / gunRecoil relative to the values first seen.
-    local function applyRecoil(settings, scale)
-        local saved = originals[settings]
-        if not saved then
-            saved = {}
-            for _, group in ipairs(RECOIL_GROUPS) do
-                local groupTable = rawget(settings, group)
-                if type(groupTable) == "table" then
-                    saved[group] = {}
-                    for direction, range in pairs(groupTable) do
-                        if type(range) == "table" and type(range[1]) == "number" and type(range[2]) == "number" then
-                            saved[group][direction] = {range[1], range[2]}
-                        end
-                    end
-                end
-            end
-            originals[settings] = saved
-        end
-        for group, directions in pairs(saved) do
-            local groupTable = rawget(settings, group)
-            if type(groupTable) == "table" then
-                for direction, range in pairs(directions) do
-                    local target = groupTable[direction]
-                    if type(target) == "table" then
-                        target[1] = range[1] * scale
-                        target[2] = range[2] * scale
-                    end
-                end
-            end
-        end
-    end
-
-    local function restoreTable(settings)
-        if originals[settings] then
-            pcall(applyRecoil, settings, 1)
-            originals[settings] = nil
-        end
-    end
-
-    local function restoreRecoil()
-        for settings in pairs(originals) do restoreTable(settings) end
-        copies = {}
-    end
-
-    -- Finds tables on the Lua heap that look like a gun's recoil settings, except the module's own table.
-    local function scanHeap(exclude)
-        local found = {}
-        if not hasGetGc then return found end
-        local ok, objects = pcall(getgc, true)
-        if not ok or type(objects) ~= "table" then return found end
-        for _, object in ipairs(objects) do
-            if type(object) == "table" and not exclude[object] then
-                local cam, gun = rawget(object, "camRecoil"), rawget(object, "gunRecoil")
-                if type(cam) == "table" and type(gun) == "table" then found[#found + 1] = object end
-            end
-        end
-        return found
-    end
-
-    -- Every ACS_Settings module that holds recoil values: your tools, but also copies the ACS client may
-    -- have made elsewhere (camera / viewmodel, ReplicatedStorage, PlayerGui). Each one has its own table.
-    local modules = {} -- list of {tbl = settings table, path = full name}
-
-    local function collectModules()
-        local list = {}
-        local seen = {}
-        local function consider(item)
-            if item:IsA("ModuleScript") and item.Name == "ACS_Settings" then
-                local ok, result = pcall(require, item)
-                if ok and type(result) == "table" and not seen[result]
-                    and type(rawget(result, "camRecoil")) == "table"
-                    and type(rawget(result, "gunRecoil")) == "table" then
-                    seen[result] = true
-                    list[#list + 1] = {tbl = result, path = item:GetFullName()}
-                end
-            end
-        end
-        local function scan(root)
-            if not root then return end
-            consider(root)
-            for _, item in ipairs(root:GetDescendants()) do consider(item) end
-        end
-        scan(lplr.Character)
-        scan(lplr:FindFirstChildOfClass("Backpack"))
-        scan(ws.CurrentCamera)
-        scan(game:GetService("ReplicatedStorage"):FindFirstChild("ACS_Engine"))
-        scan(lplr:FindFirstChildOfClass("PlayerGui"))
-        return list
-    end
-
-    task.spawn(function()
-        local pass = 0
-        while not terminated do
-            if toggles.RecoilScale then
-                local scale = math.clamp(cfg.recoilScale, 0, 1)
-                if pass % 2 == 0 then
-                    modules = collectModules()
-                    local exclude = {}
-                    for _, entry in ipairs(modules) do exclude[entry.tbl] = true end
-                    copies = scanHeap(exclude) -- about once a second (needs getgc)
-                end
-                pass += 1
-                if #copies > 0 then
-                    -- The script uses its own copy: scale the copies and leave the modules untouched,
-                    -- so the next copy it makes starts from the real values.
-                    for _, entry in ipairs(modules) do restoreTable(entry.tbl) end
-                    for _, copy in ipairs(copies) do pcall(applyRecoil, copy, scale) end
-                else
-                    for _, entry in ipairs(modules) do pcall(applyRecoil, entry.tbl, scale) end
-                end
-            elseif next(originals) ~= nil then
-                restoreRecoil()
-                modules = {}
-            end
-            task.wait(0.5)
-        end
-    end)
-
-    -- Used by the "Check Recoil" button: lists every settings module being edited (console + clipboard).
-    ESPX.checkRecoil = function()
-        local lines = {}
-        for _, entry in ipairs(collectModules()) do
-            local camRecoil = rawget(entry.tbl, "camRecoil")
-            local up = type(camRecoil) == "table" and camRecoil.camRecoilUp
-            local upText = (type(up) == "table") and string.format("%.1f-%.1f", up[1] or 0, up[2] or 0) or "?"
-            lines[#lines + 1] = entry.path .. "  camUp=" .. upText
-        end
-        lines[#lines + 1] = "heap copies: " .. #copies .. (hasGetGc and "" or " (executor has no getgc)")
-        local text = table.concat(lines, "\n")
-        print("[BLACKWALL] Check Recoil\n" .. text)
-        local copyFn = setclipboard or toclipboard
-        if type(copyFn) == "function" then pcall(copyFn, text) end
-        return string.format("[%d MODULES | camUp %s]", #lines - 1, (#lines > 1) and lines[1]:match("camUp=(%S+)") or "-")
-    end
-
-    -- Gun FOV: runs after everything else each frame so the game's own FOV changes do not undo it.
+    -- Runs after everything else each frame so the game's own FOV changes do not undo it.
     -- While you hold right mouse (aiming) the gun's own zoom is left alone.
     local fovApplied = false
     local fovOriginal = nil
@@ -4279,7 +3916,7 @@ do
         if not camera then return end
         local active = toggles.GunFOV
             and not toggles.Freecam
-            and getEquippedGun() ~= nil
+            and holdingGun()
             and not uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
         if active then
             if not fovApplied then
@@ -4295,13 +3932,233 @@ do
 
     -- Used by the Terminate button.
     ESPX.restoreGun = function()
-        restoreRecoil()
         pcall(function() rs:UnbindFromRenderStep("HRSH_GunFOV") end)
         if fovApplied and fovOriginal then
             local camera = ws.CurrentCamera
             if camera then camera.FieldOfView = fovOriginal end
         end
         fovApplied = false
+    end
+end
+
+-- Fun: Ragdoll and Sit.
+-- Ragdoll is a real one: every joint except the root joint is switched off and replaced by a ball-socket
+-- constraint, so the limbs, head and torso flop freely and collide with the world. Sit is just a sit.
+-- Own block to stay under the 200-locals limit.
+do
+    local ragdoll = {character = nil, created = {}, motors = {}, collide = {}, failed = nil}
+    local sitActive = false
+
+    local function startRagdoll(character)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then return false end
+        ragdoll.character = character
+        ragdoll.created = {}
+        ragdoll.motors = {}
+        ragdoll.collide = {}
+
+        humanoid.PlatformStand = true
+        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+
+        for _, motor in ipairs(character:GetDescendants()) do
+            -- Root / RootJoint stays, so the body keeps following the HumanoidRootPart.
+            if motor:IsA("Motor6D") and motor.Part0 and motor.Part1
+                and motor.Name ~= "RootJoint" and motor.Name ~= "Root" then
+                local attachment0 = Instance.new("Attachment")
+                attachment0.Name = "HRSH_RagdollA0"
+                attachment0.CFrame = motor.C0
+                attachment0.Parent = motor.Part0
+                local attachment1 = Instance.new("Attachment")
+                attachment1.Name = "HRSH_RagdollA1"
+                attachment1.CFrame = motor.C1
+                attachment1.Parent = motor.Part1
+
+                local socket = Instance.new("BallSocketConstraint")
+                socket.Name = "HRSH_RagdollSocket"
+                socket.Attachment0 = attachment0
+                socket.Attachment1 = attachment1
+                socket.LimitsEnabled = true
+                socket.UpperAngle = 70
+                socket.TwistLimitsEnabled = true
+                socket.TwistLowerAngle = -45
+                socket.TwistUpperAngle = 45
+                socket.Parent = motor.Part0
+
+                -- Connected parts must not push each other apart, or the joints jitter.
+                local noCollide = Instance.new("NoCollisionConstraint")
+                noCollide.Name = "HRSH_RagdollNoCollide"
+                noCollide.Part0 = motor.Part0
+                noCollide.Part1 = motor.Part1
+                noCollide.Parent = motor.Part0
+
+                ragdoll.created[#ragdoll.created + 1] = attachment0
+                ragdoll.created[#ragdoll.created + 1] = attachment1
+                ragdoll.created[#ragdoll.created + 1] = socket
+                ragdoll.created[#ragdoll.created + 1] = noCollide
+
+                -- Switch the animated joint off (falls back to unparenting it if Enabled is not available).
+                local entry = {motor = motor, parent = motor.Parent, usedEnabled = true}
+                local ok = pcall(function() motor.Enabled = false end)
+                if not ok then
+                    entry.usedEnabled = false
+                    motor.Parent = nil
+                end
+                ragdoll.motors[#ragdoll.motors + 1] = entry
+            end
+        end
+
+        -- Solid body parts, so the limbs land on the ground and on each other.
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                ragdoll.collide[part] = part.CanCollide
+                part.CanCollide = true
+            end
+        end
+        return true
+    end
+
+    -- forget = true when the old character is already gone (respawn): nothing to put back.
+    local function stopRagdoll(forget)
+        local character = ragdoll.character
+        if not character then return end
+        if not forget then
+            for _, instance in ipairs(ragdoll.created) do instance:Destroy() end
+            for _, entry in ipairs(ragdoll.motors) do
+                if entry.usedEnabled then
+                    pcall(function() entry.motor.Enabled = true end)
+                else
+                    entry.motor.Parent = entry.parent
+                end
+            end
+            for part, collide in pairs(ragdoll.collide) do
+                if part.Parent then part.CanCollide = collide end
+            end
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            local root = character:FindFirstChild("HumanoidRootPart")
+            if root then
+                -- Stand the body back up (keeping the direction it faces) before the joints pull the limbs in.
+                pcall(function()
+                    local look = root.CFrame.LookVector
+                    local flat = Vector3.new(look.X, 0, look.Z)
+                    if flat.Magnitude < 0.1 then flat = Vector3.new(0, 0, -1) end
+                    local position = root.Position + Vector3.new(0, 3, 0)
+                    root.CFrame = CFrame.lookAt(position, position + flat.Unit)
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                end)
+            end
+            if humanoid then
+                humanoid.PlatformStand = false
+                humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+        end
+        ragdoll.character = nil
+        ragdoll.created = {}
+        ragdoll.motors = {}
+        ragdoll.collide = {}
+    end
+
+    task.spawn(function()
+        while not terminated do
+            local character = lplr.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+            if toggles.Ragdoll then
+                if ragdoll.character ~= character then
+                    if ragdoll.character then stopRagdoll(true) end -- the old character respawned away
+                    if character and ragdoll.failed ~= character then
+                        if not startRagdoll(character) then ragdoll.failed = character end
+                    end
+                end
+            elseif ragdoll.character then
+                stopRagdoll(false)
+                ragdoll.failed = nil
+            end
+
+            if humanoid then
+                if toggles.Sit then
+                    sitActive = true
+                    if not humanoid.Sit then humanoid.Sit = true end
+                elseif sitActive then
+                    sitActive = false
+                    humanoid.Sit = false
+                end
+            end
+            task.wait(0.1)
+        end
+    end)
+
+    -- TEMPORARY helper: lists what the game's own Ragdoll module returns (function names and parameter counts,
+    -- no source code) plus anything in ACS_Engine named "ragdoll", so we can see how the game's ragdoll is
+    -- started. Output goes to the console and the clipboard.
+    ESPX.inspectRagdoll = function()
+        local lines = {}
+        local engine = game:GetService("ReplicatedStorage"):FindFirstChild("ACS_Engine")
+        if not engine then error("ACS_Engine not found") end
+
+        for _, item in ipairs(engine:GetDescendants()) do
+            if string.find(string.lower(item.Name), "ragdoll", 1, true) then
+                lines[#lines + 1] = item.ClassName .. "  " .. item:GetFullName()
+            end
+        end
+
+        local modules = engine:FindFirstChild("Modules")
+        local moduleScript = modules and modules:FindFirstChild("Ragdoll")
+        if moduleScript and moduleScript:IsA("ModuleScript") then
+            lines[#lines + 1] = ""
+            lines[#lines + 1] = "== " .. moduleScript:GetFullName() .. " =="
+            for attrName, attrValue in pairs(moduleScript:GetAttributes()) do
+                lines[#lines + 1] = "@" .. attrName .. " = " .. tostring(attrValue)
+            end
+            local ok, lib = pcall(require, moduleScript)
+            if not ok then
+                lines[#lines + 1] = "require failed: " .. tostring(lib)
+            else
+                local function describeFunction(name, fn)
+                    local details = ""
+                    pcall(function()
+                        local params, vararg = debug.info(fn, "a")
+                        details = string.format("  params=%s%s", tostring(params), vararg and "+vararg" or "")
+                    end)
+                    lines[#lines + 1] = name .. " = function" .. details
+                end
+                lines[#lines + 1] = "returns: " .. typeof(lib)
+                if type(lib) == "function" then
+                    describeFunction("(the module itself)", lib)
+                elseif type(lib) == "table" then
+                    local keys = {}
+                    for key in pairs(lib) do keys[#keys + 1] = key end
+                    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+                    for _, key in ipairs(keys) do
+                        local value = lib[key]
+                        if type(value) == "function" then
+                            describeFunction(tostring(key), value)
+                        elseif type(value) == "table" then
+                            lines[#lines + 1] = tostring(key) .. " = <table>"
+                        else
+                            lines[#lines + 1] = tostring(key) .. " = " .. tostring(value) .. "  (" .. typeof(value) .. ")"
+                        end
+                    end
+                end
+            end
+        else
+            lines[#lines + 1] = "(ACS_Engine.Modules.Ragdoll not found)"
+        end
+
+        local text = table.concat(lines, "\n")
+        print(text)
+        local copyFn = setclipboard or toclipboard
+        if type(copyFn) == "function" then pcall(copyFn, text) end
+        return "[" .. #lines .. " LINES]"
+    end
+
+    -- Used by the Terminate button.
+    ESPX.restoreFun = function()
+        stopRagdoll(false)
+        local character = lplr.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid and sitActive then humanoid.Sit = false end
+        sitActive = false
     end
 end
 
@@ -4669,6 +4526,7 @@ do
         pcall(ESPX.restoreWorld)
         pcall(ESPX.restoreCinematic)
         pcall(ESPX.restoreGun)
+        pcall(ESPX.restoreFun)
         pcall(ESPX.stopFreecam)
         pcall(ESPX.clearViewLines)
         pcall(ESPX.restoreHitboxes)
