@@ -1908,9 +1908,151 @@ function ESPX.serverHop()
     teleportService:TeleportToPlaceInstance(game.PlaceId, choices[math.random(#choices)], lplr)
 end
 
+-- TEMPORARY debug helper: prints the structure of your equipped gun and any ACS folders (names, classes,
+-- attributes, Value objects, remote names) to the console and clipboard. It only reads names and values;
+-- it does not read script source or hook anything.
+function ESPX.dumpGunInfo()
+    local lines = {}
+    local MAX_LINES = 800
+    local function add(text)
+        if #lines < MAX_LINES then
+            lines[#lines + 1] = text
+        elseif #lines == MAX_LINES then
+            lines[#lines + 1] = "... (output truncated)"
+        end
+    end
+
+    -- Visual / helper instances are only counted, so the dump stays readable.
+    local NOISE = {
+        "ParticleEmitter", "Attachment", "Motor6D", "Weld", "WeldConstraint", "SurfaceAppearance", "Decal",
+        "Texture", "Trail", "Beam", "SpecialMesh", "PointLight", "SpotLight", "SurfaceLight", "Highlight",
+        "Sound", "Animation", "UICorner", "UIStroke", "UIListLayout",
+    }
+    local function isNoise(inst)
+        for _, className in ipairs(NOISE) do
+            if inst:IsA(className) then return true end
+        end
+        return false
+    end
+
+    local function describe(inst, depth)
+        local line = string.rep("  ", depth) .. inst.Name .. " [" .. inst.ClassName .. "]"
+        if inst:IsA("ValueBase") then
+            pcall(function() line = line .. " = " .. tostring(inst.Value) end)
+        end
+        for attrName, attrValue in pairs(inst:GetAttributes()) do
+            line = line .. "  @" .. attrName .. "=" .. tostring(attrValue)
+        end
+        add(line)
+    end
+
+    local function walk(root, depth, maxDepth)
+        describe(root, depth)
+        local hidden = 0
+        local children = root:GetChildren()
+        if depth >= maxDepth then
+            if #children > 0 then add(string.rep("  ", depth + 1) .. "... (" .. #children .. " children not shown)") end
+            return
+        end
+        for _, child in ipairs(children) do
+            if isNoise(child) then
+                hidden += 1
+            else
+                walk(child, depth + 1, maxDepth)
+            end
+        end
+        if hidden > 0 then add(string.rep("  ", depth + 1) .. "(" .. hidden .. " visual/helper instances hidden)") end
+    end
+
+    add("PlaceId: " .. tostring(game.PlaceId))
+
+    -- 1) The gun you are holding (or the first tool in your backpack).
+    local character = lplr.Character
+    local backpack = lplr:FindFirstChildOfClass("Backpack")
+    local tools = {}
+    if character then
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("Tool") then tools[#tools + 1] = child end
+        end
+    end
+    if backpack then
+        for _, child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") then tools[#tools + 1] = child end
+        end
+    end
+    add("")
+    add("== YOUR TOOLS ==")
+    if #tools == 0 then
+        add("(no tools found - equip or pick up a gun, then press the button again)")
+    end
+    for index, tool in ipairs(tools) do
+        if index == 1 then
+            walk(tool, 0, 6) -- full structure for the first tool (the equipped one is listed first)
+        else
+            describe(tool, 0)
+        end
+    end
+
+    -- 2) ACS containers in ReplicatedStorage.
+    add("")
+    add("== ACS CONTAINERS (ReplicatedStorage) ==")
+    local replicated = game:GetService("ReplicatedStorage")
+    local foundAcs = false
+    for _, child in ipairs(replicated:GetChildren()) do
+        if string.find(string.lower(child.Name), "acs", 1, true) then
+            foundAcs = true
+            walk(child, 0, 3)
+        end
+    end
+    if not foundAcs then add("(nothing named ACS in ReplicatedStorage)") end
+
+    -- 3) Remote / bindable names (paths only).
+    add("")
+    add("== REMOTES / BINDABLES (ReplicatedStorage and your tools) ==")
+    local remoteCount = 0
+    local function scanRemotes(root)
+        for _, d in ipairs(root:GetDescendants()) do
+            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("BindableEvent") or d:IsA("BindableFunction") then
+                remoteCount += 1
+                if remoteCount <= 150 then add(d.ClassName .. "  " .. d:GetFullName()) end
+            end
+        end
+    end
+    scanRemotes(replicated)
+    for _, tool in ipairs(tools) do scanRemotes(tool) end
+    if remoteCount > 150 then add("... (" .. (remoteCount - 150) .. " more not shown)") end
+
+    -- 4) Script names (not source) related to ACS in your character / PlayerGui.
+    add("")
+    add("== ACS SCRIPTS IN YOUR CHARACTER / PLAYERGUI (names only) ==")
+    local scriptCount = 0
+    local function scanScripts(root)
+        if not root then return end
+        for _, d in ipairs(root:GetDescendants()) do
+            if (d:IsA("LocalScript") or d:IsA("Script") or d:IsA("ModuleScript"))
+                and string.find(string.lower(d.Name), "acs", 1, true) then
+                scriptCount += 1
+                if scriptCount <= 60 then add(d.ClassName .. "  " .. d:GetFullName()) end
+            end
+        end
+    end
+    scanScripts(character)
+    scanScripts(lplr:FindFirstChildOfClass("PlayerGui"))
+    if scriptCount == 0 then add("(none found)") end
+
+    local text = table.concat(lines, "\n")
+    print(text)
+    local copyFn = setclipboard or toclipboard
+    if type(copyFn) == "function" then pcall(copyFn, text) end
+    return "[" .. #lines .. " LINES]"
+end
+
 createSection("[ SERVER ]")
 createActionButton("Rejoin Server", function() ESPX.rejoin() end)
 createActionButton("Server Hop", function() ESPX.serverHop() end)
+
+createSection("[ DEBUG ]")
+createActionButton("Dump ACS Gun Info", function() return ESPX.dumpGunInfo() end)
 
 -- Per-feature keybinds: any toggle in the menu can be bound to a key (saved in HRSH_MenuBinds.json).
 do
