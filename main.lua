@@ -50,6 +50,7 @@ local toggles = {
     RemoveUI = false,
     RemoveNearBlur = false,
     CustomDoF = false,
+    DoFAutoFocus = false,
     OverheadText = true,
     Crosshair = false,
     Fly = false,
@@ -94,10 +95,11 @@ local cfg = {
     viewLineLength = 60, -- View Line length in studs
     hitboxSize = 8, -- Hitbox Extender: size (studs) of each extended part
     hitboxTransparency = 0.7, -- Hitbox Extender: how see-through the extended parts are
-    dofFar = 0.5, -- Custom DoF: far blur strength
+    dofFar = 0.8, -- Custom DoF: far blur strength
     dofNear = 0, -- Custom DoF: near blur strength
-    dofFocusDistance = 40, -- Custom DoF: distance (studs) that is perfectly sharp
-    dofFocusRadius = 25, -- Custom DoF: depth around the focus distance that stays sharp
+    dofFocusDistance = 10, -- Custom DoF: distance (studs) that is perfectly sharp (also the Auto Focus fallback)
+    dofFocusRadius = 5, -- Custom DoF: depth around the focus distance that stays sharp
+    dofLayers = 1, -- Custom DoF: how many effects are stacked (stronger blur)
     crosshairSize = 3, -- crosshair dot radius
     crosshairOpacity = 1, -- crosshair dot opacity
     crosshairHue = 0, -- crosshair color hue in degrees
@@ -205,6 +207,7 @@ local function saveSettings()
         dofNear = cfg.dofNear,
         dofFocusDistance = cfg.dofFocusDistance,
         dofFocusRadius = cfg.dofFocusRadius,
+        dofLayers = cfg.dofLayers,
         crosshairSize = cfg.crosshairSize,
         crosshairOpacity = cfg.crosshairOpacity,
         crosshairHue = cfg.crosshairHue,
@@ -865,7 +868,7 @@ local function createToggle(name, key)
 end
 
 -- Slider: thin rail, red fill, diamond thumb and tick marks. Click anywhere on the rail or drag.
-local function createSlider(name, minV, maxV, def, cb, key)
+local function createSlider(name, minV, maxV, def, cb, key, step)
     local container = Instance.new("Frame")
     container.Parent = scroll
     container.BackgroundColor3 = C.panel
@@ -971,6 +974,7 @@ local function createSlider(name, minV, maxV, def, cb, key)
         local val = minV + (maxV - minV) * pos
         val = math.floor(val * 100 + 0.5) / 100
         if maxV - minV >= 10 then val = math.floor(val + 0.5) end
+        if step then val = math.floor(val / step + 0.5) * step end -- e.g. 0.5 for fine focus control
         local ratio = math.clamp((val - minV) / (maxV - minV), 0, 1)
         fill.Size = UDim2.new(ratio, 0, 1, 0)
         thumb.Position = UDim2.new(ratio, 0, 0.5, 0)
@@ -1060,10 +1064,12 @@ createActionButton("Restore UI", function()
 end)
 createToggle("Remove Near Blur", "RemoveNearBlur")
 createToggle("Custom DoF", "CustomDoF")
+createToggle("DoF Auto Focus", "DoFAutoFocus")
 createSlider("DoF Far Intensity", 0, 1, cfg.dofFar, function(v) cfg.dofFar = v end, "dofFar")
 createSlider("DoF Near Intensity", 0, 1, cfg.dofNear, function(v) cfg.dofNear = v end, "dofNear")
-createSlider("DoF Focus Distance", 5, 500, cfg.dofFocusDistance, function(v) cfg.dofFocusDistance = v end, "dofFocusDistance")
-createSlider("DoF Focus Radius", 0, 200, cfg.dofFocusRadius, function(v) cfg.dofFocusRadius = v end, "dofFocusRadius")
+createSlider("DoF Focus Distance", 0, 100, cfg.dofFocusDistance, function(v) cfg.dofFocusDistance = v end, "dofFocusDistance", 0.5)
+createSlider("DoF Focus Radius", 0, 50, cfg.dofFocusRadius, function(v) cfg.dofFocusRadius = v end, "dofFocusRadius", 0.5)
+createSlider("DoF Layers", 1, 3, cfg.dofLayers, function(v) cfg.dofLayers = v end, "dofLayers", 1)
 createSection("[ CROSSHAIR ]")
 createToggle("Crosshair", "Crosshair")
 createSlider("Crosshair Size", 1, 12, cfg.crosshairSize, function(v) cfg.crosshairSize = v end, "crosshairSize")
@@ -3766,7 +3772,7 @@ do
     local function applyNearBlurRemoval()
         local function scan(container)
             for _, effect in ipairs(container:GetChildren()) do
-                if effect:IsA("DepthOfFieldEffect") and effect.Name ~= "HRSH_DepthOfField" then
+                if effect:IsA("DepthOfFieldEffect") and string.find(effect.Name, "HRSH_DepthOfField", 1, true) ~= 1 then
                     if nearOriginal[effect] == nil then nearOriginal[effect] = effect.NearIntensity end
                     if effect.NearIntensity ~= 0 then effect.NearIntensity = 0 end
                 end
@@ -3784,25 +3790,59 @@ do
         end
     end
 
-    -- Custom Depth of Field: our own effect, controlled by the sliders.
-    local dof = nil
+    -- Custom Depth of Field: our own effects, controlled by the sliders. Up to 3 identical effects can be
+    -- stacked ("DoF Layers") for a stronger blur than a single effect can give.
+    local dofEffects = {} -- [1..3] = DepthOfFieldEffect
+    local focusSmoothed = nil
+
+    local function getDofEffect(index)
+        local effect = dofEffects[index]
+        if not effect or not effect.Parent then
+            effect = Instance.new("DepthOfFieldEffect")
+            effect.Name = (index == 1) and "HRSH_DepthOfField" or ("HRSH_DepthOfField" .. index)
+            effect.Parent = lighting
+            dofEffects[index] = effect
+        end
+        return effect
+    end
 
     local function updateDof()
-        if toggles.CustomDoF then
-            if not dof or not dof.Parent then
-                dof = Instance.new("DepthOfFieldEffect")
-                dof.Name = "HRSH_DepthOfField"
-                dof.Parent = lighting
+        local layers = math.clamp(math.floor(cfg.dofLayers + 0.5), 1, 3)
+        for index = 1, 3 do
+            if toggles.CustomDoF and index <= layers then
+                local effect = getDofEffect(index)
+                effect.Enabled = true
+                effect.FarIntensity = cfg.dofFar
+                effect.NearIntensity = cfg.dofNear
+                effect.InFocusRadius = cfg.dofFocusRadius
+                if not toggles.DoFAutoFocus then effect.FocusDistance = cfg.dofFocusDistance end
+            elseif dofEffects[index] then
+                dofEffects[index].Enabled = false
             end
-            dof.Enabled = true
-            dof.FarIntensity = cfg.dofFar
-            dof.NearIntensity = cfg.dofNear
-            dof.FocusDistance = cfg.dofFocusDistance
-            dof.InFocusRadius = cfg.dofFocusRadius
-        elseif dof then
-            dof.Enabled = false
         end
     end
+
+    -- Auto Focus: like a real camera, focus on whatever is in the middle of the screen. The distance is
+    -- smoothed so focus glides between subjects. If nothing is hit (sky), the Focus Distance slider is used.
+    ESPX.track(rs.RenderStepped:Connect(function(dt)
+        if terminated or not (toggles.CustomDoF and toggles.DoFAutoFocus) then
+            focusSmoothed = nil
+            return
+        end
+        local camera = ws.CurrentCamera
+        if not camera then return end
+        local hit = ws:Raycast(camera.CFrame.Position, camera.CFrame.LookVector * 1000)
+        local target = hit and hit.Distance or cfg.dofFocusDistance
+        if focusSmoothed then
+            focusSmoothed = focusSmoothed + (target - focusSmoothed) * math.min(1, dt * 8)
+        else
+            focusSmoothed = target
+        end
+        for index = 1, 3 do
+            local effect = dofEffects[index]
+            if effect and effect.Enabled then effect.FocusDistance = focusSmoothed end
+        end
+    end))
 
     task.spawn(function()
         local uiTimer = 1
@@ -3833,9 +3873,9 @@ do
     ESPX.restoreCinematic = function()
         restoreUI()
         restoreNearBlur()
-        if dof then
-            dof:Destroy()
-            dof = nil
+        for index, effect in pairs(dofEffects) do
+            effect:Destroy()
+            dofEffects[index] = nil
         end
     end
 end
