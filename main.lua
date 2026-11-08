@@ -2047,12 +2047,92 @@ function ESPX.dumpGunInfo()
     return "[" .. #lines .. " LINES]"
 end
 
+-- TEMPORARY debug helper: prints the values stored in the equipped gun's ACS_Settings module and in
+-- ACS_Engine's GameRules.Config (read only), so we can see which fields exist (recoil, camera, FOV ...).
+function ESPX.dumpGunSettings()
+    local lines = {}
+    local MAX_LINES = 500
+    local function add(text)
+        if #lines < MAX_LINES then
+            lines[#lines + 1] = text
+        elseif #lines == MAX_LINES then
+            lines[#lines + 1] = "... (output truncated)"
+        end
+    end
+
+    local function format(value)
+        local kind = typeof(value)
+        if kind == "function" then return "<function>" end
+        return tostring(value) .. "  (" .. kind .. ")"
+    end
+
+    local function dumpTable(tbl, depth, seen)
+        local keys = {}
+        for key in pairs(tbl) do keys[#keys + 1] = key end
+        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+        for _, key in ipairs(keys) do
+            local value = tbl[key]
+            local indent = string.rep("  ", depth)
+            if type(value) == "table" then
+                if seen[value] or depth >= 3 then
+                    add(indent .. tostring(key) .. " = <table, not expanded>")
+                else
+                    seen[value] = true
+                    add(indent .. tostring(key) .. " = {")
+                    dumpTable(value, depth + 1, seen)
+                    add(indent .. "}")
+                end
+            else
+                add(indent .. tostring(key) .. " = " .. format(value))
+            end
+        end
+    end
+
+    local function dumpModule(label, moduleScript)
+        add("== " .. label .. " (" .. moduleScript:GetFullName() .. ") ==")
+        local ok, result = pcall(require, moduleScript)
+        if not ok then
+            add("(could not read it: " .. tostring(result) .. ")")
+        elseif type(result) == "table" then
+            dumpTable(result, 0, {[result] = true})
+        else
+            add(format(result))
+        end
+        add("")
+    end
+
+    local character = lplr.Character
+    local tool = character and character:FindFirstChildOfClass("Tool")
+    if tool and tool:FindFirstChild("ACS_Settings") and tool.ACS_Settings:IsA("ModuleScript") then
+        dumpModule("GUN SETTINGS: " .. tool.Name, tool.ACS_Settings)
+    else
+        add("(equip a gun first to read its ACS_Settings)")
+        add("")
+    end
+
+    local engine = game:GetService("ReplicatedStorage"):FindFirstChild("ACS_Engine")
+    local rules = engine and engine:FindFirstChild("GameRules")
+    local config = rules and rules:FindFirstChild("Config")
+    if config and config:IsA("ModuleScript") then
+        dumpModule("ACS GAME RULES CONFIG", config)
+    else
+        add("(ACS_Engine.GameRules.Config not found)")
+    end
+
+    local text = table.concat(lines, "\n")
+    print(text)
+    local copyFn = setclipboard or toclipboard
+    if type(copyFn) == "function" then pcall(copyFn, text) end
+    return "[" .. #lines .. " LINES]"
+end
+
 createSection("[ SERVER ]")
 createActionButton("Rejoin Server", function() ESPX.rejoin() end)
 createActionButton("Server Hop", function() ESPX.serverHop() end)
 
 createSection("[ DEBUG ]")
 createActionButton("Dump ACS Gun Info", function() return ESPX.dumpGunInfo() end)
+createActionButton("Dump Gun Settings", function() return ESPX.dumpGunSettings() end)
 
 -- Per-feature keybinds: any toggle in the menu can be bound to a key (saved in HRSH_MenuBinds.json).
 do
