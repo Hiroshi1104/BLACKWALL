@@ -517,7 +517,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: GUN-MODS"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: GUN-MODS-2"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1044,6 +1044,7 @@ createSlider("Hitbox Transparency", 0, 1, cfg.hitboxTransparency, function(v) cf
 createSection("[ GUN ]")
 createToggle("Recoil Scale", "RecoilScale")
 createSlider("Recoil Amount", 0, 1, cfg.recoilScale, function(v) cfg.recoilScale = v end, "recoilScale")
+createActionButton("Check Recoil", function() return ESPX.checkRecoil() end)
 createToggle("Gun FOV", "GunFOV")
 createSlider("Gun FOV Value", 30, 120, cfg.gunFov, function(v) cfg.gunFov = v end, "gunFov")
 
@@ -4113,12 +4114,15 @@ do
     end
 end
 
--- Gun mods for ACS guns (client side only): scales the recoil values stored in the equipped gun's
--- ACS_Settings (camera kick and gun-model kick), and sets the camera FOV while a gun is held.
--- Damage, ammo and fire rate are not touched. Own block to stay under the 200-locals limit.
+-- Gun mods for ACS guns (client side only): scales the recoil values of the equipped gun (camera kick and
+-- gun-model kick), and sets the camera FOV while a gun is held. Damage, ammo and fire rate are not touched.
+-- The gun's script may work on a copy of its ACS_Settings made when you equip it, so the live copies are
+-- looked up with getgc (when the executor has it) and scaled too. Own block to stay under the 200-locals limit.
 do
     local RECOIL_GROUPS = {"camRecoil", "gunRecoil"}
-    local originals = {} -- [settings table] = {[group] = {[direction] = {min, max}}} as first seen
+    local originals = setmetatable({}, {__mode = "k"}) -- [settings table] = {[group] = {[direction] = {min, max}}}
+    local copies = {}  -- live copies of the settings found on the heap (see scanHeap)
+    local hasGetGc = type(getgc) == "function"
 
     local function getEquippedGun()
         local character = lplr.Character
@@ -4136,7 +4140,7 @@ do
         if not saved then
             saved = {}
             for _, group in ipairs(RECOIL_GROUPS) do
-                local groupTable = settings[group]
+                local groupTable = rawget(settings, group)
                 if type(groupTable) == "table" then
                     saved[group] = {}
                     for direction, range in pairs(groupTable) do
@@ -4149,7 +4153,7 @@ do
             originals[settings] = saved
         end
         for group, directions in pairs(saved) do
-            local groupTable = settings[group]
+            local groupTable = rawget(settings, group)
             if type(groupTable) == "table" then
                 for direction, range in pairs(directions) do
                     local target = groupTable[direction]
@@ -4162,29 +4166,74 @@ do
         end
     end
 
-    local function restoreRecoil()
-        for settings in pairs(originals) do
+    local function restoreTable(settings)
+        if originals[settings] then
             pcall(applyRecoil, settings, 1)
             originals[settings] = nil
         end
     end
 
+    local function restoreRecoil()
+        for settings in pairs(originals) do restoreTable(settings) end
+        copies = {}
+    end
+
+    -- Finds tables on the Lua heap that look like a gun's recoil settings, except the module's own table.
+    local function scanHeap(moduleTable)
+        local found = {}
+        if not hasGetGc then return found end
+        local ok, objects = pcall(getgc, true)
+        if not ok or type(objects) ~= "table" then return found end
+        for _, object in ipairs(objects) do
+            if type(object) == "table" and object ~= moduleTable then
+                local cam, gun = rawget(object, "camRecoil"), rawget(object, "gunRecoil")
+                if type(cam) == "table" and type(gun) == "table" then found[#found + 1] = object end
+            end
+        end
+        return found
+    end
+
     task.spawn(function()
+        local pass = 0
         while not terminated do
             if toggles.RecoilScale then
+                local scale = math.clamp(cfg.recoilScale, 0, 1)
                 local _, settingsModule = getEquippedGun()
                 if settingsModule then
-                    local ok, settings = pcall(require, settingsModule)
-                    if ok and type(settings) == "table" then
-                        pcall(applyRecoil, settings, math.clamp(cfg.recoilScale, 0, 1))
+                    local ok, moduleTable = pcall(require, settingsModule)
+                    if ok and type(moduleTable) == "table" then
+                        if pass % 2 == 0 then copies = scanHeap(moduleTable) end -- heap scan about once a second
+                        pass += 1
+                        if #copies > 0 then
+                            -- The script uses its own copy: scale the copies and leave the module untouched,
+                            -- so the next copy it makes starts from the real values.
+                            restoreTable(moduleTable)
+                            for _, copy in ipairs(copies) do pcall(applyRecoil, copy, scale) end
+                        else
+                            pcall(applyRecoil, moduleTable, scale)
+                        end
                     end
                 end
             elseif next(originals) ~= nil then
                 restoreRecoil()
             end
-            task.wait(0.1)
+            task.wait(0.5)
         end
     end)
+
+    -- Used by the "Check Recoil" button: shows what the module currently holds and how many copies were found.
+    ESPX.checkRecoil = function()
+        local _, settingsModule = getEquippedGun()
+        if not settingsModule then return "[EQUIP A GUN]" end
+        local ok, moduleTable = pcall(require, settingsModule)
+        if not ok or type(moduleTable) ~= "table" then return "[CAN'T READ SETTINGS]" end
+        local camRecoil = rawget(moduleTable, "camRecoil")
+        local up = type(camRecoil) == "table" and camRecoil.camRecoilUp
+        local upText = (type(up) == "table") and string.format("%.1f-%.1f", up[1] or 0, up[2] or 0) or "?"
+        local text = string.format("[camUp %s | copies %d%s]", upText, #copies, hasGetGc and "" or " (no getgc)")
+        print("[BLACKWALL] Check Recoil: " .. text)
+        return text
+    end
 
     -- Gun FOV: runs after everything else each frame so the game's own FOV changes do not undo it.
     -- While you hold right mouse (aiming) the gun's own zoom is left alone.
