@@ -53,6 +53,7 @@ local toggles = {
     DoFAutoFocus = false,
     GunFOV = false,
     Ragdoll = false,
+    GameRagdoll = false,
     Sit = false,
     OverheadText = true,
     Crosshair = false,
@@ -132,6 +133,7 @@ if type(loadedSettings.toggles) == "table" then
 end
 toggles.RemoveUI = false -- never start with the game UI hidden, even if it was on when last saved
 toggles.Ragdoll = false -- never start ragdolled or sitting
+toggles.GameRagdoll = false
 toggles.Sit = false
 if type(loadedSettings.cfg) == "table" then
     for key, value in pairs(loadedSettings.cfg) do
@@ -518,7 +520,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: FUN-TAB-2"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: FUN-TAB-3"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1771,8 +1773,8 @@ end))
 setTab("Fun")
 createSection("[ FUN ]")
 createToggle("Ragdoll", "Ragdoll")
+createToggle("Game Ragdoll", "GameRagdoll")
 createToggle("Sit", "Sit")
-createActionButton("Inspect Game Ragdoll", function() return ESPX.inspectRagdoll() end)
 
 -- Settings: menu keybind and performance controls.
 setTab("Settings")
@@ -3941,14 +3943,41 @@ do
     end
 end
 
--- Fun: Ragdoll and Sit.
--- Ragdoll is a real one: every joint except the root joint is switched off and replaced by a ball-socket
--- constraint, so the limbs, head and torso flop freely and collide with the world. Sit is just a sit.
+-- Fun: Ragdoll, Game Ragdoll and Sit.
+-- Ragdoll is our own: every joint except the root joint is switched off and replaced by a ball-socket
+-- constraint, so the limbs flop freely and collide with the world.
+-- Game Ragdoll runs the game's own ACS ragdoll function (ReplicatedStorage.ACS_Engine.Modules.Ragdoll, the one
+-- it uses on death) on your character, and undoes whatever it changed when switched off.
 -- Own block to stay under the 200-locals limit.
 do
-    local ragdoll = {character = nil, created = {}, motors = {}, collide = {}, failed = nil}
+    local ragdoll = {
+        character = nil, created = {}, motors = {}, collide = {}, failed = nil, -- our own ragdoll
+        gameCharacter = nil, snapshot = nil, gameFailed = nil,                  -- the game's ragdoll
+    }
     local sitActive = false
 
+    -- Puts a character back on its feet after a ragdoll (keeps the direction it faces).
+    local function standUp(character)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root then
+            pcall(function()
+                local look = root.CFrame.LookVector
+                local flat = Vector3.new(look.X, 0, look.Z)
+                if flat.Magnitude < 0.1 then flat = Vector3.new(0, 0, -1) end
+                local position = root.Position + Vector3.new(0, 3, 0)
+                root.CFrame = CFrame.lookAt(position, position + flat.Unit)
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+            end)
+        end
+        if humanoid then
+            humanoid.PlatformStand = false
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end
+
+    ---------------------------------------------------------------- our own ragdoll
     local function startRagdoll(character)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid or humanoid.Health <= 0 then return false end
@@ -4033,24 +4062,7 @@ do
             for part, collide in pairs(ragdoll.collide) do
                 if part.Parent then part.CanCollide = collide end
             end
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            local root = character:FindFirstChild("HumanoidRootPart")
-            if root then
-                -- Stand the body back up (keeping the direction it faces) before the joints pull the limbs in.
-                pcall(function()
-                    local look = root.CFrame.LookVector
-                    local flat = Vector3.new(look.X, 0, look.Z)
-                    if flat.Magnitude < 0.1 then flat = Vector3.new(0, 0, -1) end
-                    local position = root.Position + Vector3.new(0, 3, 0)
-                    root.CFrame = CFrame.lookAt(position, position + flat.Unit)
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
-                end)
-            end
-            if humanoid then
-                humanoid.PlatformStand = false
-                humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end
+            standUp(character)
         end
         ragdoll.character = nil
         ragdoll.created = {}
@@ -4058,12 +4070,111 @@ do
         ragdoll.collide = {}
     end
 
+    ---------------------------------------------------------------- the game's ragdoll
+    -- Remembers the character before the game's function runs, so it can be put back afterwards.
+    local function takeSnapshot(character)
+        local snap = {descendants = {}, count = 0, motors = {}, collide = {}}
+        for _, item in ipairs(character:GetDescendants()) do
+            snap.descendants[item] = true
+            snap.count += 1
+            if item:IsA("Motor6D") then
+                local enabled = true
+                pcall(function() enabled = item.Enabled end)
+                snap.motors[#snap.motors + 1] = {motor = item, clone = item:Clone(), parent = item.Parent, enabled = enabled}
+            end
+        end
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") then snap.collide[part] = part.CanCollide end
+        end
+        return snap
+    end
+
+    local function snapshotChanged(snap, character)
+        if #character:GetDescendants() ~= snap.count then return true end
+        for _, entry in ipairs(snap.motors) do
+            if entry.motor.Parent == nil then return true end
+            local enabled = entry.enabled
+            pcall(function() enabled = entry.motor.Enabled end)
+            if enabled ~= entry.enabled then return true end
+        end
+        return false
+    end
+
+    local function startGameRagdoll(character, humanoid)
+        local engine = game:GetService("ReplicatedStorage"):FindFirstChild("ACS_Engine")
+        local modules = engine and engine:FindFirstChild("Modules")
+        local moduleScript = modules and modules:FindFirstChild("Ragdoll")
+        if not (moduleScript and moduleScript:IsA("ModuleScript")) then return false end
+        local ok, ragdollFunction = pcall(require, moduleScript)
+        if not ok or type(ragdollFunction) ~= "function" then return false end
+
+        local snap = takeSnapshot(character)
+        ragdoll.snapshot = snap
+
+        -- The function takes one argument. ACS code usually passes the Humanoid, so try that first,
+        -- then the character, and keep whichever one actually changed something.
+        for _, argument in ipairs({humanoid, character}) do
+            task.spawn(function() pcall(ragdollFunction, argument) end)
+            task.wait(0.4)
+            if snapshotChanged(snap, character) then return true end
+        end
+        ragdoll.snapshot = nil
+        return false
+    end
+
+    local function stopGameRagdoll(forget)
+        local character = ragdoll.gameCharacter
+        local snap = ragdoll.snapshot
+        ragdoll.gameCharacter = nil
+        ragdoll.snapshot = nil
+        if forget or not character or not snap then return end
+
+        -- Remove what the game's function added, put its joints back, restore collisions.
+        for _, item in ipairs(character:GetDescendants()) do
+            if not snap.descendants[item] then pcall(function() item:Destroy() end) end
+        end
+        for _, entry in ipairs(snap.motors) do
+            if entry.motor.Parent == nil then
+                if entry.parent and entry.parent.Parent then entry.clone.Parent = entry.parent end
+            else
+                pcall(function() entry.motor.Enabled = entry.enabled end)
+            end
+        end
+        for part, collide in pairs(snap.collide) do
+            if part.Parent then part.CanCollide = collide end
+        end
+        standUp(character)
+    end
+
     task.spawn(function()
         while not terminated do
             local character = lplr.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local wantGame = toggles.GameRagdoll
+            local wantOwn = toggles.Ragdoll and not wantGame
 
-            if toggles.Ragdoll then
+            -- Game ragdoll
+            if wantGame then
+                if ragdoll.gameCharacter ~= character and ragdoll.gameFailed ~= character then
+                    if ragdoll.gameCharacter then stopGameRagdoll(true) end -- old character respawned away
+                    if character and humanoid and humanoid.Health > 0 then
+                        if startGameRagdoll(character, humanoid) then
+                            ragdoll.gameCharacter = character
+                        else
+                            ragdoll.gameFailed = character
+                            warn("[BLACKWALL] The game's ragdoll function changed nothing on your character.")
+                        end
+                    end
+                end
+            elseif ragdoll.gameCharacter then
+                stopGameRagdoll(false)
+                ragdoll.gameFailed = nil
+            else
+                ragdoll.gameFailed = nil
+            end
+
+            -- Our own ragdoll
+            if wantOwn then
                 if ragdoll.character ~= character then
                     if ragdoll.character then stopRagdoll(true) end -- the old character respawned away
                     if character and ragdoll.failed ~= character then
@@ -4088,73 +4199,10 @@ do
         end
     end)
 
-    -- TEMPORARY helper: lists what the game's own Ragdoll module returns (function names and parameter counts,
-    -- no source code) plus anything in ACS_Engine named "ragdoll", so we can see how the game's ragdoll is
-    -- started. Output goes to the console and the clipboard.
-    ESPX.inspectRagdoll = function()
-        local lines = {}
-        local engine = game:GetService("ReplicatedStorage"):FindFirstChild("ACS_Engine")
-        if not engine then error("ACS_Engine not found") end
-
-        for _, item in ipairs(engine:GetDescendants()) do
-            if string.find(string.lower(item.Name), "ragdoll", 1, true) then
-                lines[#lines + 1] = item.ClassName .. "  " .. item:GetFullName()
-            end
-        end
-
-        local modules = engine:FindFirstChild("Modules")
-        local moduleScript = modules and modules:FindFirstChild("Ragdoll")
-        if moduleScript and moduleScript:IsA("ModuleScript") then
-            lines[#lines + 1] = ""
-            lines[#lines + 1] = "== " .. moduleScript:GetFullName() .. " =="
-            for attrName, attrValue in pairs(moduleScript:GetAttributes()) do
-                lines[#lines + 1] = "@" .. attrName .. " = " .. tostring(attrValue)
-            end
-            local ok, lib = pcall(require, moduleScript)
-            if not ok then
-                lines[#lines + 1] = "require failed: " .. tostring(lib)
-            else
-                local function describeFunction(name, fn)
-                    local details = ""
-                    pcall(function()
-                        local params, vararg = debug.info(fn, "a")
-                        details = string.format("  params=%s%s", tostring(params), vararg and "+vararg" or "")
-                    end)
-                    lines[#lines + 1] = name .. " = function" .. details
-                end
-                lines[#lines + 1] = "returns: " .. typeof(lib)
-                if type(lib) == "function" then
-                    describeFunction("(the module itself)", lib)
-                elseif type(lib) == "table" then
-                    local keys = {}
-                    for key in pairs(lib) do keys[#keys + 1] = key end
-                    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-                    for _, key in ipairs(keys) do
-                        local value = lib[key]
-                        if type(value) == "function" then
-                            describeFunction(tostring(key), value)
-                        elseif type(value) == "table" then
-                            lines[#lines + 1] = tostring(key) .. " = <table>"
-                        else
-                            lines[#lines + 1] = tostring(key) .. " = " .. tostring(value) .. "  (" .. typeof(value) .. ")"
-                        end
-                    end
-                end
-            end
-        else
-            lines[#lines + 1] = "(ACS_Engine.Modules.Ragdoll not found)"
-        end
-
-        local text = table.concat(lines, "\n")
-        print(text)
-        local copyFn = setclipboard or toclipboard
-        if type(copyFn) == "function" then pcall(copyFn, text) end
-        return "[" .. #lines .. " LINES]"
-    end
-
     -- Used by the Terminate button.
     ESPX.restoreFun = function()
-        stopRagdoll(false)
+        pcall(stopRagdoll, false)
+        pcall(stopGameRagdoll, false)
         local character = lplr.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         if humanoid and sitActive then humanoid.Sit = false end
