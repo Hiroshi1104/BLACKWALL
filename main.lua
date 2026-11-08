@@ -51,6 +51,8 @@ local toggles = {
     RemoveNearBlur = false,
     CustomDoF = false,
     DoFAutoFocus = false,
+    RecoilScale = false,
+    GunFOV = false,
     OverheadText = true,
     Crosshair = false,
     Fly = false,
@@ -100,6 +102,8 @@ local cfg = {
     dofFocusDistance = 10, -- Custom DoF: distance (studs) that is perfectly sharp (also the Auto Focus fallback)
     dofFocusRadius = 5, -- Custom DoF: depth around the focus distance that stays sharp
     dofLayers = 1, -- Custom DoF: how many effects are stacked (stronger blur)
+    recoilScale = 0.5, -- Recoil Scale: 1 = normal recoil, 0 = none
+    gunFov = 90, -- Gun FOV: camera FOV while holding a gun (not aiming)
     crosshairSize = 3, -- crosshair dot radius
     crosshairOpacity = 1, -- crosshair dot opacity
     crosshairHue = 0, -- crosshair color hue in degrees
@@ -208,6 +212,8 @@ local function saveSettings()
         dofFocusDistance = cfg.dofFocusDistance,
         dofFocusRadius = cfg.dofFocusRadius,
         dofLayers = cfg.dofLayers,
+        recoilScale = cfg.recoilScale,
+        gunFov = cfg.gunFov,
         crosshairSize = cfg.crosshairSize,
         crosshairOpacity = cfg.crosshairOpacity,
         crosshairHue = cfg.crosshairHue,
@@ -511,7 +517,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: GUN-SETTINGS"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: GUN-MODS"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1035,6 +1041,11 @@ createToggle("Extend Body", "HitboxBody")
 createToggle("Extend Legs", "HitboxLegs")
 createSlider("Hitbox Size", 2, 30, cfg.hitboxSize, function(v) cfg.hitboxSize = v end, "hitboxSize")
 createSlider("Hitbox Transparency", 0, 1, cfg.hitboxTransparency, function(v) cfg.hitboxTransparency = v end, "hitboxTransparency")
+createSection("[ GUN ]")
+createToggle("Recoil Scale", "RecoilScale")
+createSlider("Recoil Amount", 0, 1, cfg.recoilScale, function(v) cfg.recoilScale = v end, "recoilScale")
+createToggle("Gun FOV", "GunFOV")
+createSlider("Gun FOV Value", 30, 120, cfg.gunFov, function(v) cfg.gunFov = v end, "gunFov")
 
 -- Visual: every ESP / overlay / on-screen display option lives here.
 setTab("Visual")
@@ -4102,6 +4113,115 @@ do
     end
 end
 
+-- Gun mods for ACS guns (client side only): scales the recoil values stored in the equipped gun's
+-- ACS_Settings (camera kick and gun-model kick), and sets the camera FOV while a gun is held.
+-- Damage, ammo and fire rate are not touched. Own block to stay under the 200-locals limit.
+do
+    local RECOIL_GROUPS = {"camRecoil", "gunRecoil"}
+    local originals = {} -- [settings table] = {[group] = {[direction] = {min, max}}} as first seen
+
+    local function getEquippedGun()
+        local character = lplr.Character
+        local tool = character and character:FindFirstChildOfClass("Tool")
+        local settingsModule = tool and tool:FindFirstChild("ACS_Settings")
+        if settingsModule and settingsModule:IsA("ModuleScript") then
+            return tool, settingsModule
+        end
+        return nil
+    end
+
+    -- Scales every min/max pair in camRecoil / gunRecoil relative to the values first seen.
+    local function applyRecoil(settings, scale)
+        local saved = originals[settings]
+        if not saved then
+            saved = {}
+            for _, group in ipairs(RECOIL_GROUPS) do
+                local groupTable = settings[group]
+                if type(groupTable) == "table" then
+                    saved[group] = {}
+                    for direction, range in pairs(groupTable) do
+                        if type(range) == "table" and type(range[1]) == "number" and type(range[2]) == "number" then
+                            saved[group][direction] = {range[1], range[2]}
+                        end
+                    end
+                end
+            end
+            originals[settings] = saved
+        end
+        for group, directions in pairs(saved) do
+            local groupTable = settings[group]
+            if type(groupTable) == "table" then
+                for direction, range in pairs(directions) do
+                    local target = groupTable[direction]
+                    if type(target) == "table" then
+                        target[1] = range[1] * scale
+                        target[2] = range[2] * scale
+                    end
+                end
+            end
+        end
+    end
+
+    local function restoreRecoil()
+        for settings in pairs(originals) do
+            pcall(applyRecoil, settings, 1)
+            originals[settings] = nil
+        end
+    end
+
+    task.spawn(function()
+        while not terminated do
+            if toggles.RecoilScale then
+                local _, settingsModule = getEquippedGun()
+                if settingsModule then
+                    local ok, settings = pcall(require, settingsModule)
+                    if ok and type(settings) == "table" then
+                        pcall(applyRecoil, settings, math.clamp(cfg.recoilScale, 0, 1))
+                    end
+                end
+            elseif next(originals) ~= nil then
+                restoreRecoil()
+            end
+            task.wait(0.1)
+        end
+    end)
+
+    -- Gun FOV: runs after everything else each frame so the game's own FOV changes do not undo it.
+    -- While you hold right mouse (aiming) the gun's own zoom is left alone.
+    local fovApplied = false
+    local fovOriginal = nil
+    rs:BindToRenderStep("HRSH_GunFOV", Enum.RenderPriority.Last.Value, function()
+        if terminated then return end
+        local camera = ws.CurrentCamera
+        if not camera then return end
+        local active = toggles.GunFOV
+            and not toggles.Freecam
+            and getEquippedGun() ~= nil
+            and not uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+        if active then
+            if not fovApplied then
+                fovApplied = true
+                fovOriginal = camera.FieldOfView
+            end
+            camera.FieldOfView = cfg.gunFov
+        elseif fovApplied then
+            fovApplied = false
+            if fovOriginal then camera.FieldOfView = fovOriginal end
+        end
+    end)
+
+    -- Used by the Terminate button.
+    ESPX.restoreGun = function()
+        restoreRecoil()
+        pcall(function() rs:UnbindFromRenderStep("HRSH_GunFOV") end)
+        if fovApplied and fovOriginal then
+            local camera = ws.CurrentCamera
+            if camera then camera.FieldOfView = fovOriginal end
+        end
+        fovApplied = false
+    end
+end
+
 -- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
     local function getGeneratorColor()
@@ -4465,6 +4585,7 @@ do
         pcall(clearHeadArrows)
         pcall(ESPX.restoreWorld)
         pcall(ESPX.restoreCinematic)
+        pcall(ESPX.restoreGun)
         pcall(ESPX.stopFreecam)
         pcall(ESPX.clearViewLines)
         pcall(ESPX.restoreHitboxes)
