@@ -53,7 +53,6 @@ local toggles = {
     DoFAutoFocus = false,
     GunFOV = false,
     Ragdoll = false,
-    GameRagdoll = false,
     Sit = false,
     OverheadText = true,
     Crosshair = false,
@@ -94,7 +93,6 @@ local cfg = {
     genHue = 33, -- Generator ESP color hue in degrees (33 = orange)
     textOpacity = 1, -- overhead text opacity
     textSize = 13, -- overhead text size
-    gameRagdollTime = 6, -- Game Ragdoll: seconds before it switches itself off (0 = until you turn it off)
     camFov = 70, -- camera field of view (used by Custom FOV)
     freecamSpeed = 50, -- freecam move speed (studs/second)
     viewLineLength = 60, -- View Line length in studs
@@ -134,7 +132,6 @@ if type(loadedSettings.toggles) == "table" then
 end
 toggles.RemoveUI = false -- never start with the game UI hidden, even if it was on when last saved
 toggles.Ragdoll = false -- never start ragdolled or sitting
-toggles.GameRagdoll = false
 toggles.Sit = false
 if type(loadedSettings.cfg) == "table" then
     for key, value in pairs(loadedSettings.cfg) do
@@ -207,7 +204,6 @@ local function saveSettings()
         genHue = cfg.genHue,
         textOpacity = cfg.textOpacity,
         textSize = cfg.textSize,
-        gameRagdollTime = cfg.gameRagdollTime,
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
         viewLineLength = cfg.viewLineLength,
@@ -522,7 +518,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: FUN-TAB-4"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: FUN-TAB-5"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1775,9 +1771,7 @@ end))
 setTab("Fun")
 createSection("[ FUN ]")
 createToggle("Ragdoll", "Ragdoll")
-createToggle("Game Ragdoll", "GameRagdoll")
 createToggle("Sit", "Sit")
-createSlider("Game Ragdoll Seconds", 0, 30, cfg.gameRagdollTime, function(v) cfg.gameRagdollTime = v end, "gameRagdollTime")
 
 -- Settings: menu keybind and performance controls.
 setTab("Settings")
@@ -3946,17 +3940,12 @@ do
     end
 end
 
--- Fun: Ragdoll, Game Ragdoll and Sit.
--- Ragdoll is our own: every joint except the root joint is switched off and replaced by a ball-socket
--- constraint, so the limbs flop freely and collide with the world.
--- Game Ragdoll runs the game's own ACS ragdoll function (ReplicatedStorage.ACS_Engine.Modules.Ragdoll, the one
--- it uses on death) on your character, and undoes whatever it changed when switched off.
+-- Fun: Ragdoll and Sit.
+-- Ragdoll is a real one: every joint except the root joint is switched off and replaced by a ball-socket
+-- constraint, so the limbs flop freely and collide with the world. Sit is just a sit.
 -- Own block to stay under the 200-locals limit.
 do
-    local ragdoll = {
-        character = nil, created = {}, motors = {}, collide = {}, failed = nil, -- our own ragdoll
-        gameCharacter = nil, snapshot = nil, gameFailed = nil,                  -- the game's ragdoll
-    }
+    local ragdoll = {character = nil, created = {}, motors = {}, collide = {}, failed = nil}
     local sitActive = false
 
     -- Puts a character back on its feet after a ragdoll (keeps the direction it faces).
@@ -4073,174 +4062,11 @@ do
         ragdoll.collide = {}
     end
 
-    ---------------------------------------------------------------- the game's ragdoll
-    local HUMANOID_PROPERTIES = {
-        "WalkSpeed", "JumpPower", "JumpHeight", "UseJumpPower", "AutoRotate", "PlatformStand", "HipHeight", "Sit",
-    }
-
-    -- Remembers everything the game's function might change (joints, collisions, anchoring, humanoid
-    -- settings, scripts being switched off), so it can all be put back afterwards.
-    local function takeSnapshot(character)
-        local snap = {descendants = {}, count = 0, motors = {}, parts = {}, scripts = {}, humanoid = {}, states = {}}
-        for _, item in ipairs(character:GetDescendants()) do
-            snap.descendants[item] = true
-            snap.count += 1
-            if item:IsA("Motor6D") then
-                local enabled = true
-                pcall(function() enabled = item.Enabled end)
-                snap.motors[#snap.motors + 1] = {motor = item, clone = item:Clone(), parent = item.Parent, enabled = enabled}
-            elseif item:IsA("BasePart") then
-                snap.parts[item] = {anchored = item.Anchored, canCollide = item.CanCollide, massless = item.Massless}
-            elseif item:IsA("LocalScript") or item:IsA("Script") then
-                pcall(function() snap.scripts[item] = item.Disabled end)
-            end
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            for _, name in ipairs(HUMANOID_PROPERTIES) do
-                pcall(function() snap.humanoid[name] = humanoid[name] end)
-            end
-            for _, state in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
-                pcall(function() snap.states[state] = humanoid:GetStateEnabled(state) end)
-            end
-        end
-        return snap
-    end
-
-    local function snapshotChanged(snap, character)
-        if #character:GetDescendants() ~= snap.count then return true end
-        for _, entry in ipairs(snap.motors) do
-            if entry.motor.Parent == nil then return true end
-            local enabled = entry.enabled
-            pcall(function() enabled = entry.motor.Enabled end)
-            if enabled ~= entry.enabled then return true end
-        end
-        for part, original in pairs(snap.parts) do
-            if part.Parent and (part.Anchored ~= original.anchored or part.CanCollide ~= original.canCollide) then
-                return true
-            end
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            for name, value in pairs(snap.humanoid) do
-                local current = value
-                pcall(function() current = humanoid[name] end)
-                if current ~= value then return true end
-            end
-        end
-        for script, disabled in pairs(snap.scripts) do
-            local current = disabled
-            pcall(function() current = script.Disabled end)
-            if script.Parent and current ~= disabled then return true end
-        end
-        return false
-    end
-
-    local function startGameRagdoll(character, humanoid)
-        local engine = game:GetService("ReplicatedStorage"):FindFirstChild("ACS_Engine")
-        local modules = engine and engine:FindFirstChild("Modules")
-        local moduleScript = modules and modules:FindFirstChild("Ragdoll")
-        if not (moduleScript and moduleScript:IsA("ModuleScript")) then return false end
-        local ok, ragdollFunction = pcall(require, moduleScript)
-        if not ok or type(ragdollFunction) ~= "function" then return false end
-
-        local snap = takeSnapshot(character)
-        ragdoll.snapshot = snap
-
-        -- The function takes one argument. ACS code usually passes the Humanoid, so try that first,
-        -- then the character, and keep whichever one actually changed something.
-        for _, argument in ipairs({humanoid, character}) do
-            task.spawn(function() pcall(ragdollFunction, argument) end)
-            task.wait(0.4)
-            if snapshotChanged(snap, character) then
-                -- A body that stays anchored just hangs in the air, so make sure physics can move it.
-                for part in pairs(snap.parts) do
-                    if part.Parent and part.Anchored then part.Anchored = false end
-                end
-                return true
-            end
-        end
-        ragdoll.snapshot = nil
-        return false
-    end
-
-    local function stopGameRagdoll(forget)
-        local character = ragdoll.gameCharacter
-        local snap = ragdoll.snapshot
-        ragdoll.gameCharacter = nil
-        ragdoll.snapshot = nil
-        if forget or not character or not snap then return end
-
-        -- Remove what the game's function added and put its joints back.
-        for _, item in ipairs(character:GetDescendants()) do
-            if not snap.descendants[item] then pcall(function() item:Destroy() end) end
-        end
-        for _, entry in ipairs(snap.motors) do
-            if entry.motor.Parent == nil then
-                if entry.parent and entry.parent.Parent then entry.clone.Parent = entry.parent end
-            else
-                pcall(function() entry.motor.Enabled = entry.enabled end)
-            end
-        end
-        -- Anchoring, collisions, scripts and every humanoid setting go back to what they were.
-        for part, original in pairs(snap.parts) do
-            if part.Parent then
-                pcall(function()
-                    part.Anchored = original.anchored
-                    part.CanCollide = original.canCollide
-                    part.Massless = original.massless
-                end)
-            end
-        end
-        for script, disabled in pairs(snap.scripts) do
-            if script.Parent then pcall(function() script.Disabled = disabled end) end
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            for name, value in pairs(snap.humanoid) do
-                pcall(function() humanoid[name] = value end)
-            end
-            for state, enabled in pairs(snap.states) do
-                pcall(function() humanoid:SetStateEnabled(state, enabled) end)
-            end
-        end
-        standUp(character)
-    end
-
     task.spawn(function()
         while not terminated do
             local character = lplr.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            local wantGame = toggles.GameRagdoll
-            local wantOwn = toggles.Ragdoll and not wantGame
-
-            -- Game ragdoll
-            if wantGame then
-                if ragdoll.gameCharacter ~= character and ragdoll.gameFailed ~= character then
-                    if ragdoll.gameCharacter then stopGameRagdoll(true) end -- old character respawned away
-                    if character and humanoid and humanoid.Health > 0 then
-                        if startGameRagdoll(character, humanoid) then
-                            ragdoll.gameCharacter = character
-                            ragdoll.gameStartedAt = os.clock()
-                        else
-                            ragdoll.gameFailed = character
-                            warn("[BLACKWALL] The game's ragdoll function changed nothing on your character.")
-                        end
-                    end
-                end
-            elseif ragdoll.gameCharacter then
-                stopGameRagdoll(false)
-                ragdoll.gameFailed = nil
-            else
-                ragdoll.gameFailed = nil
-            end
-
-            -- Safety timer: the game's ragdoll only exists on your side, so it switches itself off after a few seconds.
-            if ragdoll.gameCharacter and toggles.GameRagdoll and cfg.gameRagdollTime > 0
-                and os.clock() - (ragdoll.gameStartedAt or 0) >= cfg.gameRagdollTime then
-                toggles.GameRagdoll = false
-                if ESPX.togglePaints.GameRagdoll then ESPX.togglePaints.GameRagdoll() end
-            end
+            local wantOwn = toggles.Ragdoll
 
             -- Our own ragdoll
             if wantOwn then
@@ -4271,7 +4097,6 @@ do
     -- Used by the Terminate button.
     ESPX.restoreFun = function()
         pcall(stopRagdoll, false)
-        pcall(stopGameRagdoll, false)
         local character = lplr.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         if humanoid and sitActive then humanoid.Sit = false end
