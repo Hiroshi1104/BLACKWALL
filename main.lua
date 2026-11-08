@@ -47,6 +47,9 @@ local toggles = {
     HitboxHead = true,
     HitboxBody = false,
     HitboxLegs = false,
+    RemoveUI = false,
+    RemoveNearBlur = false,
+    CustomDoF = false,
     OverheadText = true,
     Crosshair = false,
     Fly = false,
@@ -91,6 +94,10 @@ local cfg = {
     viewLineLength = 60, -- View Line length in studs
     hitboxSize = 8, -- Hitbox Extender: size (studs) of each extended part
     hitboxTransparency = 0.7, -- Hitbox Extender: how see-through the extended parts are
+    dofFar = 0.5, -- Custom DoF: far blur strength
+    dofNear = 0, -- Custom DoF: near blur strength
+    dofFocusDistance = 40, -- Custom DoF: distance (studs) that is perfectly sharp
+    dofFocusRadius = 25, -- Custom DoF: depth around the focus distance that stays sharp
     crosshairSize = 3, -- crosshair dot radius
     crosshairOpacity = 1, -- crosshair dot opacity
     crosshairHue = 0, -- crosshair color hue in degrees
@@ -117,6 +124,7 @@ if type(loadedSettings.toggles) == "table" then
         if toggles[key] ~= nil and type(value) == "boolean" then toggles[key] = value end
     end
 end
+toggles.RemoveUI = false -- never start with the game UI hidden, even if it was on when last saved
 if type(loadedSettings.cfg) == "table" then
     for key, value in pairs(loadedSettings.cfg) do
         if type(cfg[key]) == "number" and type(value) == "number" then cfg[key] = value end
@@ -193,6 +201,10 @@ local function saveSettings()
         viewLineLength = cfg.viewLineLength,
         hitboxSize = cfg.hitboxSize,
         hitboxTransparency = cfg.hitboxTransparency,
+        dofFar = cfg.dofFar,
+        dofNear = cfg.dofNear,
+        dofFocusDistance = cfg.dofFocusDistance,
+        dofFocusRadius = cfg.dofFocusRadius,
         crosshairSize = cfg.crosshairSize,
         crosshairOpacity = cfg.crosshairOpacity,
         crosshairHue = cfg.crosshairHue,
@@ -1038,6 +1050,20 @@ createToggle("Fullbright", "Fullbright")
 createToggle("No Fog", "NoFog")
 createToggle("Custom FOV", "CustomFOV")
 createSlider("Camera FOV", 30, 120, cfg.camFov, function(v) cfg.camFov = v end, "camFov")
+createSection("[ CINEMATIC ]")
+createToggle("Remove UI", "RemoveUI")
+createActionButton("Restore UI", function()
+    toggles.RemoveUI = false
+    if ESPX.togglePaints.RemoveUI then ESPX.togglePaints.RemoveUI() end
+    if ESPX.restoreUI then ESPX.restoreUI() end
+    saveSettings()
+end)
+createToggle("Remove Near Blur", "RemoveNearBlur")
+createToggle("Custom DoF", "CustomDoF")
+createSlider("DoF Far Intensity", 0, 1, cfg.dofFar, function(v) cfg.dofFar = v end, "dofFar")
+createSlider("DoF Near Intensity", 0, 1, cfg.dofNear, function(v) cfg.dofNear = v end, "dofNear")
+createSlider("DoF Focus Distance", 5, 500, cfg.dofFocusDistance, function(v) cfg.dofFocusDistance = v end, "dofFocusDistance")
+createSlider("DoF Focus Radius", 0, 200, cfg.dofFocusRadius, function(v) cfg.dofFocusRadius = v end, "dofFocusRadius")
 createSection("[ CROSSHAIR ]")
 createToggle("Crosshair", "Crosshair")
 createSlider("Crosshair Size", 1, 12, cfg.crosshairSize, function(v) cfg.crosshairSize = v end, "crosshairSize")
@@ -3662,6 +3688,158 @@ do
     end)
 end
 
+-- Cinematic: Remove UI / Restore UI, near-blur removal and a custom Depth of Field.
+-- Remove UI hides the game's own ScreenGuis, Roblox's core UI (chat, player list, backpack, health, emotes,
+-- self view) and the top bar with the menu button. Everything is restored exactly as it was.
+-- Own block to stay under the 200-locals limit.
+do
+    local starterGui = game:GetService("StarterGui")
+    local CORE_NAMES = {"Backpack", "Chat", "EmotesMenu", "Health", "PlayerList", "SelfView"}
+
+    local hidden = false
+    local guiOriginal = {}       -- [ScreenGui] = Enabled before we hid it
+    local coreOriginal = {}      -- [CoreGuiType name] = enabled before we hid it
+    local topbarCoreOriginal = nil -- SetCore("TopbarEnabled") value before
+    local topBarAppOriginal = nil  -- CoreGui.TopBarApp.Enabled before
+
+    local function applyHide()
+        local playerGui = lplr:FindFirstChildOfClass("PlayerGui")
+        if playerGui then
+            for _, screenGui in ipairs(playerGui:GetChildren()) do
+                if screenGui:IsA("ScreenGui") then
+                    if guiOriginal[screenGui] == nil then guiOriginal[screenGui] = screenGui.Enabled end
+                    if screenGui.Enabled then screenGui.Enabled = false end
+                end
+            end
+        end
+
+        if not hidden then
+            -- First pass: remember how Roblox's own UI was set up.
+            hidden = true
+            for _, name in ipairs(CORE_NAMES) do
+                local okType, coreType = pcall(function() return Enum.CoreGuiType[name] end)
+                if okType and coreType then
+                    local okGet, enabled = pcall(starterGui.GetCoreGuiEnabled, starterGui, coreType)
+                    if okGet then coreOriginal[name] = enabled end
+                end
+            end
+            local okTop, topEnabled = pcall(starterGui.GetCore, starterGui, "TopbarEnabled")
+            if okTop then topbarCoreOriginal = topEnabled end
+            local topBarApp = cg:FindFirstChild("TopBarApp")
+            if topBarApp and topBarApp:IsA("ScreenGui") then topBarAppOriginal = topBarApp.Enabled end
+        end
+
+        -- Applied on every pass, because Roblox or the game can switch these back on.
+        for name in pairs(coreOriginal) do
+            pcall(function() starterGui:SetCoreGuiEnabled(Enum.CoreGuiType[name], false) end)
+        end
+        pcall(function() starterGui:SetCore("TopbarEnabled", false) end)
+        local topBarApp = cg:FindFirstChild("TopBarApp")
+        if topBarApp and topBarApp:IsA("ScreenGui") and topBarApp.Enabled then topBarApp.Enabled = false end
+    end
+
+    local function restoreUI()
+        if not hidden and next(guiOriginal) == nil then return end
+        for screenGui, enabled in pairs(guiOriginal) do
+            if screenGui.Parent then screenGui.Enabled = enabled end
+            guiOriginal[screenGui] = nil
+        end
+        for name, enabled in pairs(coreOriginal) do
+            pcall(function() starterGui:SetCoreGuiEnabled(Enum.CoreGuiType[name], enabled) end)
+            coreOriginal[name] = nil
+        end
+        if topbarCoreOriginal ~= nil then
+            pcall(function() starterGui:SetCore("TopbarEnabled", topbarCoreOriginal) end)
+        end
+        local topBarApp = cg:FindFirstChild("TopBarApp")
+        if topBarApp and topBarApp:IsA("ScreenGui") and topBarAppOriginal ~= nil then
+            topBarApp.Enabled = topBarAppOriginal
+        end
+        topbarCoreOriginal = nil
+        topBarAppOriginal = nil
+        hidden = false
+    end
+
+    -- Near blur: the game's own DepthOfFieldEffects get their near blur set to 0 (far blur is left alone).
+    local nearOriginal = {} -- [DepthOfFieldEffect] = NearIntensity before we zeroed it
+
+    local function applyNearBlurRemoval()
+        local function scan(container)
+            for _, effect in ipairs(container:GetChildren()) do
+                if effect:IsA("DepthOfFieldEffect") and effect.Name ~= "HRSH_DepthOfField" then
+                    if nearOriginal[effect] == nil then nearOriginal[effect] = effect.NearIntensity end
+                    if effect.NearIntensity ~= 0 then effect.NearIntensity = 0 end
+                end
+            end
+        end
+        scan(lighting)
+        local camera = ws.CurrentCamera
+        if camera then scan(camera) end
+    end
+
+    local function restoreNearBlur()
+        for effect, original in pairs(nearOriginal) do
+            if effect.Parent then effect.NearIntensity = original end
+            nearOriginal[effect] = nil
+        end
+    end
+
+    -- Custom Depth of Field: our own effect, controlled by the sliders.
+    local dof = nil
+
+    local function updateDof()
+        if toggles.CustomDoF then
+            if not dof or not dof.Parent then
+                dof = Instance.new("DepthOfFieldEffect")
+                dof.Name = "HRSH_DepthOfField"
+                dof.Parent = lighting
+            end
+            dof.Enabled = true
+            dof.FarIntensity = cfg.dofFar
+            dof.NearIntensity = cfg.dofNear
+            dof.FocusDistance = cfg.dofFocusDistance
+            dof.InFocusRadius = cfg.dofFocusRadius
+        elseif dof then
+            dof.Enabled = false
+        end
+    end
+
+    task.spawn(function()
+        local uiTimer = 1
+        while not terminated do
+            uiTimer += 0.1
+            if uiTimer >= 0.25 then
+                uiTimer = 0
+                if toggles.RemoveUI then
+                    applyHide()
+                elseif hidden or next(guiOriginal) ~= nil then
+                    restoreUI()
+                end
+            end
+
+            if toggles.RemoveNearBlur then
+                applyNearBlurRemoval()
+            elseif next(nearOriginal) ~= nil then
+                restoreNearBlur()
+            end
+
+            updateDof()
+            task.wait(0.1)
+        end
+    end)
+
+    ESPX.restoreUI = restoreUI
+    -- Used by the Terminate button: puts the UI and lighting effects back and removes our DoF.
+    ESPX.restoreCinematic = function()
+        restoreUI()
+        restoreNearBlur()
+        if dof then
+            dof:Destroy()
+            dof = nil
+        end
+    end
+end
+
 -- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
     local function getGeneratorColor()
@@ -4024,6 +4202,7 @@ do
         pcall(clearGeneratorESP)
         pcall(clearHeadArrows)
         pcall(ESPX.restoreWorld)
+        pcall(ESPX.restoreCinematic)
         pcall(ESPX.stopFreecam)
         pcall(ESPX.clearViewLines)
         pcall(ESPX.restoreHitboxes)
