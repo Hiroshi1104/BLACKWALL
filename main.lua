@@ -104,6 +104,7 @@ local cfg = {
     rsSunIntensity = 0, rsSunSpread = 0.5,
     rsExposure = 0, rsLightBrightness = 0, rsShadowLift = 0, rsShadowSoftness = 0,
     rsSkylight = 1, rsReflection = 1, rsClockTime = 14, rsVignette = 0.5,
+    menuWidth = 460, menuHeight = 620, menuScale = 1, -- size of this menu (drag the corner handle, or use Menu Scale)
     camFov = 70, -- camera field of view (used by Custom FOV)
     freecamSpeed = 50, -- freecam move speed (studs/second)
     viewLineLength = 60, -- View Line length in studs
@@ -223,6 +224,7 @@ local function saveSettings()
         rsShadowLift = cfg.rsShadowLift, rsShadowSoftness = cfg.rsShadowSoftness,
         rsSkylight = cfg.rsSkylight, rsReflection = cfg.rsReflection,
         rsClockTime = cfg.rsClockTime, rsVignette = cfg.rsVignette,
+        menuWidth = cfg.menuWidth, menuHeight = cfg.menuHeight, menuScale = cfg.menuScale,
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
         viewLineLength = cfg.viewLineLength,
@@ -321,15 +323,80 @@ main.Parent = gui
 main.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- colored by the gradient below
 main.BorderSizePixel = 0
 main.Position = UDim2.new(0.035, 0, 0.12, 0)
-main.Size = UDim2.new(0, 390, 0, 560)
+main.Size = UDim2.new(0, cfg.menuWidth, 0, cfg.menuHeight)
 main.Active = true
 main.Draggable = false
 main.ClipsDescendants = true
 stroke(main, C.outline, 0.05, 1)
 local sizeConstraint = Instance.new("UISizeConstraint")
 sizeConstraint.Parent = main
-sizeConstraint.MinSize = Vector2.new(320, 360)
-sizeConstraint.MaxSize = Vector2.new(460, 760)
+sizeConstraint.MinSize = Vector2.new(340, 420)
+sizeConstraint.MaxSize = Vector2.new(1100, 1000)
+
+-- Menu scale (UIScale) and a resize handle in the bottom-right corner. Own block to save local slots.
+do
+    local menuScale = Instance.new("UIScale")
+    menuScale.Scale = math.clamp(cfg.menuScale, 0.6, 1.8)
+    menuScale.Parent = main
+
+    -- Re-applies the saved size and scale (used by the Menu Scale slider and Reset to Defaults).
+    ESPX.applyMenuSize = function()
+        main.Size = UDim2.new(0, cfg.menuWidth, 0, cfg.menuHeight)
+        menuScale.Scale = math.clamp(cfg.menuScale, 0.6, 1.8)
+    end
+
+    local handle = Instance.new("TextButton")
+    handle.Name = "ResizeHandle"
+    handle.Parent = main
+    handle.AnchorPoint = Vector2.new(1, 1)
+    handle.Position = UDim2.new(1, 0, 1, 0)
+    handle.Size = UDim2.new(0, 22, 0, 22)
+    handle.BackgroundTransparency = 1
+    handle.Text = ""
+    handle.AutoButtonColor = false
+    handle.ZIndex = 80
+    -- Three grip dots, drawn in a triangle.
+    for _, offset in ipairs({Vector2.new(15, 15), Vector2.new(9, 15), Vector2.new(15, 9)}) do
+        local dot = Instance.new("Frame")
+        dot.Parent = handle
+        dot.Position = UDim2.new(0, offset.X, 0, offset.Y)
+        dot.Size = UDim2.new(0, 3, 0, 3)
+        dot.BackgroundColor3 = C.accent
+        dot.BorderSizePixel = 0
+        dot.ZIndex = 81
+    end
+    ESPX.resizeHandle = handle
+
+    local resizing = false
+    local startMouse, startWidth, startHeight = nil, 0, 0
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = true
+            startMouse = input.Position
+            startWidth = cfg.menuWidth
+            startHeight = cfg.menuHeight
+        end
+    end)
+    ESPX.track(uis.InputChanged:Connect(function(input)
+        if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local scale = math.max(0.1, menuScale.Scale)
+            local delta = input.Position - startMouse
+            local screen = ws.CurrentCamera and ws.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+            cfg.menuWidth = math.clamp(startWidth + delta.X / scale, 340, math.min(1100, screen.X / scale))
+            cfg.menuHeight = math.clamp(startHeight + delta.Y / scale, 420, math.min(1000, screen.Y / scale))
+            main.Size = UDim2.new(0, cfg.menuWidth, 0, cfg.menuHeight)
+        end
+    end))
+    ESPX.track(uis.InputEnded:Connect(function(input)
+        if resizing and (input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            resizing = false
+            ESPX.queueSave()
+        end
+    end))
+end
 
 -- Pitch black fading into a faint blood-red haze at the bottom.
 local mainGradient = Instance.new("UIGradient")
@@ -537,7 +604,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: SHADER-TAB"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: AVATAR-HUB"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -614,6 +681,12 @@ local menuStartPosition = nil
 local function beginMenuDrag(input)
     if input.UserInputType ~= Enum.UserInputType.MouseButton1
         and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    -- The resize handle sits on top of the footer: grabbing it must not also move the window.
+    local handle = ESPX.resizeHandle
+    if handle then
+        local p, pos, size = input.Position, handle.AbsolutePosition, handle.AbsoluteSize
+        if p.X >= pos.X and p.X <= pos.X + size.X and p.Y >= pos.Y and p.Y <= pos.Y + size.Y then return end
+    end
     menuDragging = true
     menuDragStart = input.Position
     menuStartPosition = main.Position
@@ -1000,7 +1073,10 @@ local function createSlider(name, minV, maxV, def, cb, key, step)
         local val = minV + (maxV - minV) * pos
         val = math.floor(val * 100 + 0.5) / 100
         if maxV - minV >= 10 and not step then val = math.floor(val + 0.5) end
-        if step then val = math.floor(val / step + 0.5) * step end -- e.g. 0.5 for fine focus control
+        if step then -- e.g. 0.5 for fine focus control
+            val = math.floor(val / step + 0.5) * step
+            val = math.floor(val * 1000 + 0.5) / 1000
+        end
         local ratio = math.clamp((val - minV) / (maxV - minV), 0, 1)
         fill.Size = UDim2.new(ratio, 0, 1, 0)
         thumb.Position = UDim2.new(ratio, 0, 0.5, 0)
@@ -1460,7 +1536,7 @@ avatarPreviewContainer.Name = "AvatarPreviewContainer"
 avatarPreviewContainer.Parent = scroll
 avatarPreviewContainer.BackgroundTransparency = 1
 avatarPreviewContainer.BorderSizePixel = 0
-avatarPreviewContainer.Size = UDim2.new(1, -20, 0, 220)
+avatarPreviewContainer.Size = UDim2.new(1, -20, 0, 260)
 avatarPreviewContainer.ZIndex = 7
 
 local spectateViewport = Instance.new("ViewportFrame")
@@ -1493,6 +1569,8 @@ local avatarPreviewDragging = false
 local avatarPreviewLastX = 0
 local avatarPreviewLastY = 0
 local avatarPreviewConnections = {}
+-- Pan offset of the preview (in studs, along the camera's right / up) and the drag mode. Kept in a table to save locals.
+ESPX.avatarPan = {x = 0, y = 0, panning = false, moveMode = false}
 
 -- Embedded zoom slider: mouse-wheel input is left alone for menu scrolling.
 local avatarZoomMin, avatarZoomMax = 2.5, 20
@@ -1587,6 +1665,8 @@ local function updateAvatarPreviewCamera()
     -- Full orbit: yaw travels continuously through 360 degrees; pitch allows
     -- looking above and below the avatar without flipping the camera upside down.
     local rotation = CFrame.fromOrientation(avatarPreviewPitch, avatarPreviewYaw, 0)
+    local pan = ESPX.avatarPan
+    focus = focus + rotation.RightVector * pan.x + rotation.UpVector * pan.y
     local offset = rotation:VectorToWorldSpace(Vector3.new(0, 0, avatarPreviewDistance))
     avatarViewportCamera.CFrame = CFrame.lookAt(focus + offset, focus)
 end
@@ -1599,27 +1679,8 @@ local function setAvatarZoomFromX(x)
     updateAvatarPreviewCamera()
 end
 
-local function showAvatarPreview(player)
-    clearAvatarPreview()
-    avatarPreviewYaw = math.rad(180)
-    avatarPreviewPitch = math.rad(-5)
-    avatarPreviewDistance = 7
-    updateAvatarZoomSlider()
-    if not player or player.Parent ~= plrs then return end
-
-    local character = player.Character
-    if not character then return end
-
-    local oldArchivable = character.Archivable
-    local clone
-    local ok = pcall(function()
-        character.Archivable = true
-        clone = character:Clone()
-        character.Archivable = oldArchivable
-    end)
-    character.Archivable = oldArchivable
-    if not ok or not clone then return end
-
+-- Puts a ready model into the 3D preview (used for the current avatar and for saved avatars).
+function ESPX.placePreviewModel(clone)
     clone.Name = "AvatarPreview"
     for _, descendant in ipairs(clone:GetDescendants()) do
         if descendant:IsA("Script") or descendant:IsA("LocalScript") then
@@ -1645,8 +1706,45 @@ local function showAvatarPreview(player)
     end)
 end
 
--- Drag inside the avatar area to orbit. The embedded slider is the only
--- zoom control; mouse-wheel events are deliberately ignored here.
+local function showAvatarPreview(player)
+    clearAvatarPreview()
+    avatarPreviewYaw = math.rad(180)
+    avatarPreviewPitch = math.rad(-5)
+    avatarPreviewDistance = 7
+    ESPX.avatarPan.x, ESPX.avatarPan.y = 0, 0
+    updateAvatarZoomSlider()
+    if ESPX.setAvatarViewLabel then ESPX.setAvatarViewLabel(player and player.Name or "nobody") end
+    if not player or player.Parent ~= plrs then return end
+
+    local character = player.Character
+    if not character then return end
+
+    local oldArchivable = character.Archivable
+    local clone
+    local ok = pcall(function()
+        character.Archivable = true
+        clone = character:Clone()
+        character.Archivable = oldArchivable
+    end)
+    character.Archivable = oldArchivable
+    if not ok or not clone then return end
+
+    ESPX.placePreviewModel(clone)
+end
+
+-- Shows a model that was built from a saved outfit instead of the player's current character.
+function ESPX.showOutfitModel(model, label)
+    clearAvatarPreview()
+    avatarPreviewYaw = math.rad(180)
+    avatarPreviewPitch = math.rad(-5)
+    avatarPreviewDistance = 7
+    ESPX.avatarPan.x, ESPX.avatarPan.y = 0, 0
+    updateAvatarZoomSlider()
+    if ESPX.setAvatarViewLabel then ESPX.setAvatarViewLabel(label) end
+    ESPX.placePreviewModel(model)
+end
+
+-- The embedded slider is the only zoom control; mouse-wheel events are deliberately ignored here.
 avatarZoomTrack.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
@@ -1655,30 +1753,34 @@ avatarZoomTrack.InputBegan:Connect(function(input)
     end
 end)
 
+-- Left drag orbits, right drag (or left drag in MOVE mode, or Shift + left drag) moves the avatar around.
 spectateViewport.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
+    local isLeft = input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch
+    local isRight = input.UserInputType == Enum.UserInputType.MouseButton2
+    if isLeft or isRight then
         local p = input.Position
-        local panelPos, panelSize = avatarZoomPanel.AbsolutePosition, avatarZoomPanel.AbsoluteSize
-        local onZoomControl = p.X >= panelPos.X and p.X <= panelPos.X + panelSize.X
-            and p.Y >= panelPos.Y and p.Y <= panelPos.Y + panelSize.Y
-        if not onZoomControl then
+        local overControl = ESPX.isOverAvatarControl and ESPX.isOverAvatarControl(p)
+        if not overControl then
             avatarPreviewDragging = true
             avatarPreviewLastX = p.X
             avatarPreviewLastY = p.Y
+            ESPX.avatarPan.panning = isRight or ESPX.avatarPan.moveMode or uis:IsKeyDown(Enum.KeyCode.LeftShift)
         end
     end
 end)
 
 ESPX.track(uis.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.MouseButton2
         or input.UserInputType == Enum.UserInputType.Touch then
         avatarPreviewDragging = false
-        avatarZoomDragging = false
+        ESPX.avatarPan.panning = false
+        if input.UserInputType ~= Enum.UserInputType.MouseButton2 then avatarZoomDragging = false end
     end
 end))
 
-table.insert(avatarPreviewConnections, uis.InputChanged:Connect(function(input)
+table.insert(avatarPreviewConnections, ESPX.track(uis.InputChanged:Connect(function(input)
     if avatarZoomDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch) then
         setAvatarZoomFromX(input.Position.X)
@@ -1687,13 +1789,97 @@ table.insert(avatarPreviewConnections, uis.InputChanged:Connect(function(input)
         local p = input.Position
         local deltaX = p.X - avatarPreviewLastX
         local deltaY = p.Y - avatarPreviewLastY
-        avatarPreviewYaw = avatarPreviewYaw - deltaX * 0.012
-        avatarPreviewPitch = math.clamp(avatarPreviewPitch - deltaY * 0.01, math.rad(-80), math.rad(80))
         avatarPreviewLastX = p.X
         avatarPreviewLastY = p.Y
+        local pan = ESPX.avatarPan
+        if pan.panning then
+            -- World units per screen pixel at the current zoom, so the avatar follows the cursor.
+            local height = math.max(1, spectateViewport.AbsoluteSize.Y)
+            local perPixel = avatarPreviewDistance * 2 * math.tan(math.rad(avatarViewportCamera.FieldOfView) / 2) / height
+            pan.x = math.clamp(pan.x - deltaX * perPixel, -25, 25)
+            pan.y = math.clamp(pan.y + deltaY * perPixel, -25, 25)
+        else
+            avatarPreviewYaw = avatarPreviewYaw - deltaX * 0.012
+            avatarPreviewPitch = math.clamp(avatarPreviewPitch - deltaY * 0.01, math.rad(-80), math.rad(80))
+        end
         updateAvatarPreviewCamera()
     end
-end))
+end)))
+
+-- Buttons on top of the 3D preview: RESET VIEW (recenters the avatar), MODE (rotate / move) and a label.
+do
+    local function previewButton(text, xOffset)
+        local button = Instance.new("TextButton")
+        button.Parent = avatarPreviewContainer
+        button.AnchorPoint = Vector2.new(1, 0)
+        button.Position = UDim2.new(1, xOffset, 0, 8)
+        button.Size = UDim2.new(0, 90, 0, 22)
+        button.BackgroundColor3 = C.panel
+        button.BackgroundTransparency = 0.1
+        button.BorderSizePixel = 0
+        button.AutoButtonColor = false
+        button.Font = Enum.Font.Code
+        button.Text = text
+        button.TextColor3 = C.accent
+        button.TextSize = 10
+        button.ZIndex = 20
+        stroke(button, C.outline, 0.15, 1)
+        return button
+    end
+    local resetButton = previewButton("RESET VIEW", -8)
+    local modeButton = previewButton("MODE: ROTATE", -102)
+
+    local viewLabel = Instance.new("TextLabel")
+    viewLabel.Parent = avatarPreviewContainer
+    viewLabel.BackgroundTransparency = 1
+    viewLabel.Position = UDim2.new(0, 8, 0, 8)
+    viewLabel.Size = UDim2.new(1, -208, 0, 22)
+    viewLabel.Font = Enum.Font.Code
+    viewLabel.Text = "VIEWING: NOBODY"
+    viewLabel.TextColor3 = C.muted
+    viewLabel.TextSize = 10
+    viewLabel.TextXAlignment = Enum.TextXAlignment.Left
+    viewLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    viewLabel.ZIndex = 20
+
+    ESPX.setAvatarViewLabel = function(text)
+        viewLabel.Text = "VIEWING: " .. string.upper(tostring(text))
+    end
+
+    -- True when a click lands on the zoom bar or one of these buttons (so it must not start a drag).
+    ESPX.isOverAvatarControl = function(p)
+        for _, object in ipairs({avatarZoomPanel, resetButton, modeButton}) do
+            local pos, size = object.AbsolutePosition, object.AbsoluteSize
+            if p.X >= pos.X and p.X <= pos.X + size.X and p.Y >= pos.Y and p.Y <= pos.Y + size.Y then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Back to the default angle, zoom and position, so a lost avatar can always be brought back.
+    ESPX.resetAvatarView = function()
+        avatarPreviewYaw = math.rad(180)
+        avatarPreviewPitch = math.rad(-5)
+        ESPX.avatarPan.x, ESPX.avatarPan.y = 0, 0
+        if avatarPreviewModel then
+            pcall(function()
+                local _, size = avatarPreviewModel:GetBoundingBox()
+                avatarPreviewDistance = math.clamp(math.max(5, size.Magnitude * 0.85), avatarZoomMin, avatarZoomMax)
+            end)
+        else
+            avatarPreviewDistance = 7
+        end
+        updateAvatarZoomSlider()
+        updateAvatarPreviewCamera()
+    end
+
+    resetButton.MouseButton1Click:Connect(function() ESPX.resetAvatarView() end)
+    modeButton.MouseButton1Click:Connect(function()
+        ESPX.avatarPan.moveMode = not ESPX.avatarPan.moveMode
+        modeButton.Text = ESPX.avatarPan.moveMode and "MODE: MOVE" or "MODE: ROTATE"
+    end)
+end
 
 local spectateCopyButton = Instance.new("TextButton")
 spectateCopyButton.Name = "CopyPlayerInfo"
@@ -1740,6 +1926,7 @@ end)
 
 updateSpectateInfo = function(player)
     showAvatarPreview(player)
+    if ESPX.clearSavedAvatars then ESPX.clearSavedAvatars() end
     if not player or player.Parent ~= plrs then
         spectateAvatar.Image = ""
         spectateInfoText.Text = "Choose a player from the list above."
@@ -1764,6 +1951,166 @@ updateSpectateInfo = function(player)
             spectateAvatar.Image = imageUrl
         end
     end)
+end
+
+-- Saved avatars: lists the selected player's saved outfits (the Avatar Editor "costumes") as thumbnails.
+-- Click one to inspect it in the 3D preview above. Needs an executor with an HTTP request function.
+do
+    createSection("[ SAVED AVATARS ]")
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Parent = scroll
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Size = UDim2.new(1, -20, 0, 32)
+    statusLabel.Font = Enum.Font.Code
+    statusLabel.Text = "Select a player, then press Load Saved Avatars."
+    statusLabel.TextColor3 = C.muted
+    statusLabel.TextSize = 11
+    statusLabel.TextWrapped = true
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.ZIndex = 7
+
+    createActionButton("Load Saved Avatars", function() return ESPX.loadSavedAvatars() end)
+    createActionButton("Back to Current Avatar", function()
+        showAvatarPreview(selectedSpectatePlayer)
+    end)
+
+    local gridHolder = Instance.new("ScrollingFrame")
+    gridHolder.Name = "SavedAvatarGrid"
+    gridHolder.Parent = scroll
+    gridHolder.BackgroundColor3 = C.panel
+    gridHolder.BorderSizePixel = 0
+    gridHolder.Size = UDim2.new(1, -20, 0, 260)
+    gridHolder.ScrollBarThickness = 4
+    gridHolder.ScrollBarImageColor3 = C.accent
+    gridHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
+    gridHolder.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    gridHolder.ScrollingDirection = Enum.ScrollingDirection.Y
+    gridHolder.ZIndex = 7
+    stroke(gridHolder, C.outline, 0.12, 1)
+    local gridLayout = Instance.new("UIGridLayout")
+    gridLayout.Parent = gridHolder
+    gridLayout.CellSize = UDim2.new(0, 92, 0, 122)
+    gridLayout.CellPadding = UDim2.new(0, 6, 0, 6)
+    gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    local gridPadding = Instance.new("UIPadding")
+    gridPadding.Parent = gridHolder
+    gridPadding.PaddingTop = UDim.new(0, 6)
+    gridPadding.PaddingLeft = UDim.new(0, 6)
+    gridPadding.PaddingBottom = UDim.new(0, 6)
+
+    local loadToken = 0 -- bumped on every load / clear, so a slow answer for an old player is ignored
+
+    local function clearGrid()
+        for _, child in ipairs(gridHolder:GetChildren()) do
+            if child:IsA("GuiButton") then child:Destroy() end
+        end
+    end
+
+    ESPX.clearSavedAvatars = function()
+        loadToken += 1
+        clearGrid()
+        statusLabel.Text = "Select a player, then press Load Saved Avatars."
+    end
+
+    local function addCell(outfit, order)
+        local cell = Instance.new("TextButton")
+        cell.Parent = gridHolder
+        cell.LayoutOrder = order
+        cell.BackgroundColor3 = C.bg
+        cell.BorderSizePixel = 0
+        cell.AutoButtonColor = false
+        cell.Text = ""
+        cell.ZIndex = 8
+        local edge = stroke(cell, C.outline, 0.2, 1)
+        local image = Instance.new("ImageLabel")
+        image.Parent = cell
+        image.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+        image.BorderSizePixel = 0
+        image.Position = UDim2.new(0, 3, 0, 3)
+        image.Size = UDim2.new(1, -6, 0, 86)
+        image.ScaleType = Enum.ScaleType.Fit
+        image.Image = string.format("rbxthumb://type=Outfit&id=%d&w=150&h=150", outfit.id)
+        image.ZIndex = 9
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Parent = cell
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Position = UDim2.new(0, 3, 0, 91)
+        nameLabel.Size = UDim2.new(1, -6, 0, 28)
+        nameLabel.Font = Enum.Font.Code
+        nameLabel.Text = outfit.name
+        nameLabel.TextColor3 = C.text
+        nameLabel.TextSize = 10
+        nameLabel.TextWrapped = true
+        nameLabel.TextYAlignment = Enum.TextYAlignment.Top
+        nameLabel.ZIndex = 9
+        cell.MouseEnter:Connect(function() edge.Color = C.accent end)
+        cell.MouseLeave:Connect(function() edge.Color = C.outline end)
+        cell.MouseButton1Click:Connect(function() ESPX.inspectOutfit(outfit) end)
+    end
+
+    ESPX.loadSavedAvatars = function()
+        local player = selectedSpectatePlayer
+        if not player or player.Parent ~= plrs then error("Select a player from the list first") end
+        loadToken += 1
+        local token = loadToken
+        clearGrid()
+        statusLabel.Text = "Loading the saved avatars of @" .. player.Name .. " ..."
+
+        task.spawn(function()
+            local outfits = {}
+            local ok, err = pcall(function()
+                for page = 1, 6 do
+                    local url = string.format(
+                        "https://avatar.roblox.com/v1/users/%d/outfits?page=%d&itemsPerPage=50&isEditable=true",
+                        player.UserId, page
+                    )
+                    local okGet, body = pcall(ESPX.httpGet, url)
+                    if not okGet then
+                        -- Second try through a public mirror of the same API.
+                        body = ESPX.httpGet((string.gsub(url, "avatar%.roblox%.com", "avatar.roproxy.com")))
+                    end
+                    local data = HttpService:JSONDecode(body)
+                    if type(data) ~= "table" or type(data.data) ~= "table" then
+                        error("unexpected answer from the avatar service")
+                    end
+                    for _, item in ipairs(data.data) do
+                        if item.id then outfits[#outfits + 1] = {id = item.id, name = tostring(item.name or item.id)} end
+                    end
+                    if #data.data < 50 then break end
+                end
+            end)
+            if token ~= loadToken then return end
+            if #outfits == 0 then
+                statusLabel.Text = ok and "No saved avatars found (the player may keep them private)."
+                    or ("Could not load: " .. tostring(err))
+                return
+            end
+            statusLabel.Text = string.format("%d saved avatars. Click one to inspect it in the 3D preview.", #outfits)
+            for index, outfit in ipairs(outfits) do addCell(outfit, index) end
+        end)
+        return "[LOADING]"
+    end
+
+    ESPX.inspectOutfit = function(outfit)
+        local token = loadToken
+        statusLabel.Text = "Loading " .. outfit.name .. " ..."
+        task.spawn(function()
+            local ok, model = pcall(function()
+                local description = plrs:GetHumanoidDescriptionFromOutfitId(outfit.id)
+                return plrs:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
+            end)
+            if token ~= loadToken then
+                if ok and typeof(model) == "Instance" then model:Destroy() end
+                return
+            end
+            if not ok or typeof(model) ~= "Instance" then
+                statusLabel.Text = "Could not load that avatar: " .. tostring(model)
+                return
+            end
+            ESPX.showOutfitModel(model, outfit.name)
+            statusLabel.Text = "Viewing: " .. outfit.name .. " (scroll up for the 3D preview)."
+        end)
+    end
 end
 
 refreshSpectatePlayers()
@@ -1905,6 +2252,20 @@ end)
 keybindButton.MouseEnter:Connect(function() keybindButton.BackgroundColor3 = C.panel2 end)
 keybindButton.MouseLeave:Connect(function() keybindButton.BackgroundColor3 = C.panel end)
 
+createSection("[ MENU ]")
+createSlider("Menu Scale", 0.6, 1.8, cfg.menuScale, function(v)
+    cfg.menuScale = v
+    if ESPX.applyMenuSize then ESPX.applyMenuSize() end
+end, "menuScale", 0.05)
+createActionButton("Reset Menu Size", function()
+    cfg.menuWidth = ESPX.defaultCfg.menuWidth
+    cfg.menuHeight = ESPX.defaultCfg.menuHeight
+    for _, slider in ipairs(ESPX.sliders) do
+        if slider.key == "menuScale" then slider.set(ESPX.defaultCfg.menuScale) end
+    end
+    if ESPX.applyMenuSize then ESPX.applyMenuSize() end
+    saveSettings()
+end)
 createSection("[ PERFORMANCE ]")
 createToggle("Low Visuals", "LowVisuals")
 createToggle("Instance Optimizer", "InstanceOptimizer")
@@ -1931,6 +2292,7 @@ function ESPX.resetToDefaults()
         local default = (slider.key == "flySpeed") and 55 or ESPX.defaultCfg[slider.key]
         if default ~= nil then slider.set(default) end
     end
+    if ESPX.applyMenuSize then ESPX.applyMenuSize() end
     saveSettings()
 end
 
