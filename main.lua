@@ -54,6 +54,11 @@ local toggles = {
     GunFOV = false,
     Ragdoll = false,
     Sit = false,
+    Reshade = false,
+    RsClean = false,
+    RsNoShadows = false,
+    RsTime = false,
+    RsVignette = false,
     OverheadText = true,
     Crosshair = false,
     Fly = false,
@@ -93,6 +98,12 @@ local cfg = {
     genHue = 33, -- Generator ESP color hue in degrees (33 = orange)
     textOpacity = 1, -- overhead text opacity
     textSize = 13, -- overhead text size
+    -- Reshade (all neutral by default: 0 / 1 means "no change")
+    rsBrightness = 0, rsContrast = 0, rsSaturation = 0, rsTintHue = 0, rsTintStrength = 0,
+    rsBloomIntensity = 0, rsBloomSize = 24, rsBloomThreshold = 2,
+    rsSunIntensity = 0, rsSunSpread = 0.5,
+    rsExposure = 0, rsLightBrightness = 0, rsShadowLift = 0, rsShadowSoftness = 0,
+    rsSkylight = 1, rsReflection = 1, rsClockTime = 14, rsVignette = 0.5,
     camFov = 70, -- camera field of view (used by Custom FOV)
     freecamSpeed = 50, -- freecam move speed (studs/second)
     viewLineLength = 60, -- View Line length in studs
@@ -204,6 +215,14 @@ local function saveSettings()
         genHue = cfg.genHue,
         textOpacity = cfg.textOpacity,
         textSize = cfg.textSize,
+        rsBrightness = cfg.rsBrightness, rsContrast = cfg.rsContrast, rsSaturation = cfg.rsSaturation,
+        rsTintHue = cfg.rsTintHue, rsTintStrength = cfg.rsTintStrength,
+        rsBloomIntensity = cfg.rsBloomIntensity, rsBloomSize = cfg.rsBloomSize, rsBloomThreshold = cfg.rsBloomThreshold,
+        rsSunIntensity = cfg.rsSunIntensity, rsSunSpread = cfg.rsSunSpread,
+        rsExposure = cfg.rsExposure, rsLightBrightness = cfg.rsLightBrightness,
+        rsShadowLift = cfg.rsShadowLift, rsShadowSoftness = cfg.rsShadowSoftness,
+        rsSkylight = cfg.rsSkylight, rsReflection = cfg.rsReflection,
+        rsClockTime = cfg.rsClockTime, rsVignette = cfg.rsVignette,
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
         viewLineLength = cfg.viewLineLength,
@@ -518,7 +537,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: FUN-TAB-5"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: SHADER-TAB"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -575,7 +594,7 @@ local tabLayout = Instance.new("UIListLayout")
 tabLayout.Parent = tabBar
 tabLayout.FillDirection = Enum.FillDirection.Horizontal
 tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabLayout.Padding = UDim.new(0, 3)
+tabLayout.Padding = UDim.new(0, 2)
 tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 
 local tabDivider = Instance.new("Frame")
@@ -638,7 +657,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Fun", "Settings", "Binds"}) do
+for order, name in ipairs({"Main", "Visual", "Shader", "Movement", "Overwatch", "Fun", "Settings", "Binds"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -668,14 +687,14 @@ for order, name in ipairs({"Main", "Visual", "Movement", "Overwatch", "Fun", "Se
     button.Name = name .. "Tab"
     button.Parent = tabBar
     button.LayoutOrder = order
-    local tabWidths = {Main = 40, Visual = 46, Movement = 58, Overwatch = 72, Fun = 34, Settings = 52, Binds = 42}
+    local tabWidths = {Main = 36, Visual = 42, Shader = 42, Movement = 54, Overwatch = 66, Fun = 30, Settings = 48, Binds = 38}
     button.Size = UDim2.new(0, tabWidths[name] or 60, 1, 0)
     button.BackgroundColor3 = C.panel
     button.BorderSizePixel = 0
     button.AutoButtonColor = false
     button.Font = Enum.Font.Code
     button.Text = string.upper(name)
-    button.TextSize = 10
+    button.TextSize = 9
     button.TextColor3 = C.muted
     button.ZIndex = 9
     stroke(button, C.outline, 0.4, 1)
@@ -980,7 +999,7 @@ local function createSlider(name, minV, maxV, def, cb, key, step)
         local pos = math.clamp((x - back.AbsolutePosition.X) / width, 0, 1)
         local val = minV + (maxV - minV) * pos
         val = math.floor(val * 100 + 0.5) / 100
-        if maxV - minV >= 10 then val = math.floor(val + 0.5) end
+        if maxV - minV >= 10 and not step then val = math.floor(val + 0.5) end
         if step then val = math.floor(val / step + 0.5) * step end -- e.g. 0.5 for fine focus control
         local ratio = math.clamp((val - minV) / (maxV - minV), 0, 1)
         fill.Size = UDim2.new(ratio, 0, 1, 0)
@@ -1766,6 +1785,46 @@ ESPX.track(lplr.CharacterAdded:Connect(function()
 end))
 
 -- Gun tab and its obsolete weapon features have been removed.
+
+-- Shader: reshade-style color grading, bloom, lighting, shadows and a vignette.
+-- Everything is neutral by default, so turning Reshade on changes nothing until you move a slider or pick a preset.
+setTab("Shader")
+createSection("[ RESHADE ]")
+createToggle("Reshade", "Reshade")
+createToggle("Disable Game Effects", "RsClean")
+createSection("[ PRESETS ]")
+createActionButton("Cinematic", function() ESPX.applyShaderPreset("Cinematic") end)
+createActionButton("Warm Sunset", function() ESPX.applyShaderPreset("Warm Sunset") end)
+createActionButton("Cold Night", function() ESPX.applyShaderPreset("Cold Night") end)
+createActionButton("Noir", function() ESPX.applyShaderPreset("Noir") end)
+createActionButton("Vibrant", function() ESPX.applyShaderPreset("Vibrant") end)
+createActionButton("Reset Look", function() ESPX.applyShaderPreset("Neutral") end)
+createSection("[ COLOR ]")
+createSlider("Brightness", -0.5, 0.5, cfg.rsBrightness, function(v) cfg.rsBrightness = v end, "rsBrightness")
+createSlider("Contrast", -1, 1, cfg.rsContrast, function(v) cfg.rsContrast = v end, "rsContrast")
+createSlider("Saturation", -1, 1, cfg.rsSaturation, function(v) cfg.rsSaturation = v end, "rsSaturation")
+createSlider("Tint Hue", 0, 360, cfg.rsTintHue, function(v) cfg.rsTintHue = v end, "rsTintHue")
+createSlider("Tint Strength", 0, 1, cfg.rsTintStrength, function(v) cfg.rsTintStrength = v end, "rsTintStrength")
+createSection("[ BLOOM & SUN RAYS ]")
+createSlider("Bloom Intensity", 0, 3, cfg.rsBloomIntensity, function(v) cfg.rsBloomIntensity = v end, "rsBloomIntensity")
+createSlider("Bloom Size", 0, 56, cfg.rsBloomSize, function(v) cfg.rsBloomSize = v end, "rsBloomSize")
+createSlider("Bloom Threshold", 0, 4, cfg.rsBloomThreshold, function(v) cfg.rsBloomThreshold = v end, "rsBloomThreshold")
+createSlider("Sun Ray Intensity", 0, 1, cfg.rsSunIntensity, function(v) cfg.rsSunIntensity = v end, "rsSunIntensity")
+createSlider("Sun Ray Spread", 0, 1, cfg.rsSunSpread, function(v) cfg.rsSunSpread = v end, "rsSunSpread")
+createSection("[ LIGHTING ]")
+createSlider("Exposure", -3, 3, cfg.rsExposure, function(v) cfg.rsExposure = v end, "rsExposure")
+createSlider("Light Brightness (+/-)", -3, 3, cfg.rsLightBrightness, function(v) cfg.rsLightBrightness = v end, "rsLightBrightness")
+createSlider("Skylight", 0, 2, cfg.rsSkylight, function(v) cfg.rsSkylight = v end, "rsSkylight")
+createSlider("Reflections", 0, 2, cfg.rsReflection, function(v) cfg.rsReflection = v end, "rsReflection")
+createToggle("Override Time of Day", "RsTime")
+createSlider("Clock Time", 0, 24, cfg.rsClockTime, function(v) cfg.rsClockTime = v end, "rsClockTime", 0.1)
+createSection("[ SHADOWS ]")
+createToggle("Disable Shadows", "RsNoShadows")
+createSlider("Shadow Lift (+/-)", -0.5, 0.5, cfg.rsShadowLift, function(v) cfg.rsShadowLift = v end, "rsShadowLift")
+createSlider("Shadow Softness (+/-)", -1, 1, cfg.rsShadowSoftness, function(v) cfg.rsShadowSoftness = v end, "rsShadowSoftness")
+createSection("[ SCREEN ]")
+createToggle("Vignette", "RsVignette")
+createSlider("Vignette Strength", 0, 1, cfg.rsVignette, function(v) cfg.rsVignette = v end, "rsVignette")
 
 -- Fun: just-for-fun character toys.
 setTab("Fun")
@@ -4104,6 +4163,269 @@ do
     end
 end
 
+-- Reshade: color grading, bloom, sun rays, lighting and shadow offsets and a vignette.
+-- It adds its own post effects to Lighting, and changes lighting properties relative to the values it found when
+-- it was switched on (so "0" always means "as the game has it"). Switching it off puts everything back.
+-- Own block to stay under the 200-locals limit.
+do
+    local LIGHT_PROPS = {
+        "Brightness", "ExposureCompensation", "GlobalShadows", "ShadowSoftness", "EnvironmentDiffuseScale",
+        "EnvironmentSpecularScale", "ClockTime", "Ambient", "OutdoorAmbient",
+    }
+    local original = nil     -- lighting values captured when Reshade was switched on
+    local touched = {}       -- lighting properties we have written to
+    local effects = {}       -- [name] = post effect we created
+    local gameEffects = {}   -- [post effect] = Enabled before "Disable Game Effects"
+    local timeOverridden = false
+    local vignetteGui, vignetteGradients = nil, {}
+
+    local function snapshotLighting()
+        local snap = {}
+        for _, name in ipairs(LIGHT_PROPS) do
+            pcall(function() snap[name] = lighting[name] end)
+        end
+        return snap
+    end
+
+    local function setLighting(name, value)
+        local ok = pcall(function()
+            if lighting[name] ~= value then lighting[name] = value end
+        end)
+        if ok then touched[name] = true end
+    end
+
+    local function getEffect(className, name)
+        local effect = effects[name]
+        if not effect or not effect.Parent then
+            effect = Instance.new(className)
+            effect.Name = name
+            effect.Parent = lighting
+            effects[name] = effect
+        end
+        return effect
+    end
+
+    local function updateEffects()
+        local color = getEffect("ColorCorrectionEffect", "HRSH_ColorCorrection")
+        color.Enabled = true
+        color.Brightness = cfg.rsBrightness
+        color.Contrast = cfg.rsContrast
+        color.Saturation = cfg.rsSaturation
+        color.TintColor = Color3.fromHSV(math.clamp(cfg.rsTintHue, 0, 360) / 360, math.clamp(cfg.rsTintStrength, 0, 1), 1)
+
+        local bloom = getEffect("BloomEffect", "HRSH_Bloom")
+        bloom.Enabled = cfg.rsBloomIntensity > 0
+        bloom.Intensity = cfg.rsBloomIntensity
+        bloom.Size = cfg.rsBloomSize
+        bloom.Threshold = cfg.rsBloomThreshold
+
+        local sun = getEffect("SunRaysEffect", "HRSH_SunRays")
+        sun.Enabled = cfg.rsSunIntensity > 0
+        sun.Intensity = cfg.rsSunIntensity
+        sun.Spread = cfg.rsSunSpread
+    end
+
+    -- Lighting properties are skipped while Fullbright is on, so the two features never fight over them.
+    local function applyLighting(base)
+        if toggles.Fullbright then return end
+        if base.Brightness then
+            setLighting("Brightness", math.max(0, base.Brightness + cfg.rsLightBrightness))
+        end
+        if base.ExposureCompensation then
+            setLighting("ExposureCompensation", math.clamp(base.ExposureCompensation + cfg.rsExposure, -5, 5))
+        end
+        if base.GlobalShadows ~= nil then
+            setLighting("GlobalShadows", (not toggles.RsNoShadows) and base.GlobalShadows)
+        end
+        if base.ShadowSoftness then
+            setLighting("ShadowSoftness", math.clamp(base.ShadowSoftness + cfg.rsShadowSoftness, 0, 1))
+        end
+        if base.EnvironmentDiffuseScale then
+            setLighting("EnvironmentDiffuseScale", math.clamp(base.EnvironmentDiffuseScale * cfg.rsSkylight, 0, 1))
+        end
+        if base.EnvironmentSpecularScale then
+            setLighting("EnvironmentSpecularScale", math.clamp(base.EnvironmentSpecularScale * cfg.rsReflection, 0, 1))
+        end
+        local function lift(color)
+            return Color3.new(
+                math.clamp(color.R + cfg.rsShadowLift, 0, 1),
+                math.clamp(color.G + cfg.rsShadowLift, 0, 1),
+                math.clamp(color.B + cfg.rsShadowLift, 0, 1)
+            )
+        end
+        if base.Ambient then setLighting("Ambient", lift(base.Ambient)) end
+        if base.OutdoorAmbient then setLighting("OutdoorAmbient", lift(base.OutdoorAmbient)) end
+        if toggles.RsTime then
+            timeOverridden = true
+            setLighting("ClockTime", cfg.rsClockTime)
+        elseif timeOverridden then
+            timeOverridden = false
+            if base.ClockTime then setLighting("ClockTime", base.ClockTime) end
+        end
+    end
+
+    local function disableGameEffects()
+        local function scan(container)
+            if not container then return end
+            for _, item in ipairs(container:GetChildren()) do
+                if item:IsA("PostEffect") and string.sub(item.Name, 1, 5) ~= "HRSH_" then
+                    if gameEffects[item] == nil then gameEffects[item] = item.Enabled end
+                    if item.Enabled then item.Enabled = false end
+                end
+            end
+        end
+        scan(lighting)
+        scan(ws.CurrentCamera)
+    end
+
+    local function restoreGameEffects()
+        for item, enabled in pairs(gameEffects) do
+            if item.Parent then item.Enabled = enabled end
+            gameEffects[item] = nil
+        end
+    end
+
+    local function restoreAll()
+        for _, effect in pairs(effects) do pcall(function() effect:Destroy() end) end
+        effects = {}
+        restoreGameEffects()
+        if original then
+            for name in pairs(touched) do
+                if original[name] ~= nil then pcall(function() lighting[name] = original[name] end) end
+                touched[name] = nil
+            end
+            original = nil
+        end
+        timeOverridden = false
+    end
+
+    -- Vignette: four screen-edge gradients (black at the edge, clear toward the middle).
+    local function ensureVignette()
+        if vignetteGui and vignetteGui.Parent then return end
+        vignetteGradients = {}
+        vignetteGui = Instance.new("ScreenGui")
+        vignetteGui.Name = "HRSH_Vignette"
+        vignetteGui.ResetOnSpawn = false
+        vignetteGui.IgnoreGuiInset = true
+        vignetteGui.DisplayOrder = 999990
+        vignetteGui.Parent = cg
+        local function edge(size, position, anchor, rotation)
+            local frame = Instance.new("Frame")
+            frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            frame.BorderSizePixel = 0
+            frame.Size = size
+            frame.Position = position
+            frame.AnchorPoint = anchor
+            local gradient = Instance.new("UIGradient")
+            gradient.Rotation = rotation
+            gradient.Parent = frame
+            frame.Parent = vignetteGui
+            vignetteGradients[#vignetteGradients + 1] = gradient
+        end
+        edge(UDim2.new(1, 0, 0.4, 0), UDim2.new(0, 0, 0, 0), Vector2.new(0, 0), 90)   -- top
+        edge(UDim2.new(1, 0, 0.4, 0), UDim2.new(0, 0, 1, 0), Vector2.new(0, 1), 270)  -- bottom
+        edge(UDim2.new(0.3, 0, 1, 0), UDim2.new(0, 0, 0, 0), Vector2.new(0, 0), 0)    -- left
+        edge(UDim2.new(0.3, 0, 1, 0), UDim2.new(1, 0, 0, 0), Vector2.new(1, 0), 180)  -- right
+    end
+
+    local function updateVignette()
+        if toggles.RsVignette then
+            ensureVignette()
+            vignetteGui.Enabled = true
+            local strength = math.clamp(cfg.rsVignette, 0, 1)
+            local sequence = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1 - strength),
+                NumberSequenceKeypoint.new(1, 1),
+            })
+            for _, gradient in ipairs(vignetteGradients) do gradient.Transparency = sequence end
+        elseif vignetteGui and vignetteGui.Parent then
+            vignetteGui.Enabled = false
+        end
+    end
+
+    task.spawn(function()
+        while not terminated do
+            if toggles.Reshade then
+                if not original then original = snapshotLighting() end
+                updateEffects()
+                applyLighting(original)
+                if toggles.RsClean then
+                    disableGameEffects()
+                elseif next(gameEffects) ~= nil then
+                    restoreGameEffects()
+                end
+            elseif original or next(effects) ~= nil or next(gameEffects) ~= nil then
+                restoreAll()
+            end
+            updateVignette()
+            task.wait(0.1)
+        end
+    end)
+
+    -- Presets: every value is reset to neutral first, then the preset's own values are applied.
+    local NEUTRAL = {
+        rsBrightness = 0, rsContrast = 0, rsSaturation = 0, rsTintHue = 0, rsTintStrength = 0,
+        rsBloomIntensity = 0, rsBloomSize = 24, rsBloomThreshold = 2, rsSunIntensity = 0, rsSunSpread = 0.5,
+        rsExposure = 0, rsLightBrightness = 0, rsShadowLift = 0, rsShadowSoftness = 0,
+        rsSkylight = 1, rsReflection = 1, rsVignette = 0,
+    }
+    local PRESETS = {
+        Neutral = {},
+        Cinematic = {
+            rsContrast = 0.18, rsSaturation = 0.08, rsTintHue = 195, rsTintStrength = 0.1,
+            rsBloomIntensity = 0.5, rsBloomSize = 30, rsBloomThreshold = 1.8, rsShadowLift = -0.04, rsVignette = 0.5,
+        },
+        ["Warm Sunset"] = {
+            rsBrightness = 0.02, rsContrast = 0.12, rsSaturation = 0.18, rsTintHue = 28, rsTintStrength = 0.22,
+            rsBloomIntensity = 0.7, rsBloomSize = 34, rsBloomThreshold = 1.6, rsSunIntensity = 0.2, rsSunSpread = 0.6,
+            rsExposure = 0.2, rsVignette = 0.3,
+        },
+        ["Cold Night"] = {
+            rsBrightness = -0.03, rsContrast = 0.2, rsSaturation = -0.18, rsTintHue = 215, rsTintStrength = 0.3,
+            rsBloomIntensity = 0.4, rsExposure = -0.25, rsShadowLift = 0.02, rsVignette = 0.55,
+        },
+        Noir = {
+            rsBrightness = -0.02, rsContrast = 0.4, rsSaturation = -1, rsBloomIntensity = 0.25, rsVignette = 0.6,
+        },
+        Vibrant = {
+            rsContrast = 0.15, rsSaturation = 0.45, rsBloomIntensity = 0.45, rsSunIntensity = 0.1, rsVignette = 0.15,
+        },
+    }
+
+    ESPX.applyShaderPreset = function(name)
+        local preset = PRESETS[name]
+        if not preset then error("Unknown preset") end
+        local values = {}
+        for key, value in pairs(NEUTRAL) do values[key] = value end
+        for key, value in pairs(preset) do values[key] = value end
+        for key, value in pairs(values) do
+            local found = false
+            for _, slider in ipairs(ESPX.sliders) do
+                if slider.key == key then
+                    slider.set(value) -- moves the slider and updates cfg
+                    found = true
+                    break
+                end
+            end
+            if not found then cfg[key] = value end
+        end
+        toggles.Reshade = true
+        toggles.RsVignette = values.rsVignette > 0
+        if ESPX.togglePaints.Reshade then ESPX.togglePaints.Reshade() end
+        if ESPX.togglePaints.RsVignette then ESPX.togglePaints.RsVignette() end
+        saveSettings()
+    end
+
+    -- Used by the Terminate button.
+    ESPX.restoreReshade = function()
+        restoreAll()
+        if vignetteGui then
+            vignetteGui:Destroy()
+            vignetteGui = nil
+        end
+    end
+end
+
 -- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
     local function getGeneratorColor()
@@ -4469,6 +4791,7 @@ do
         pcall(ESPX.restoreCinematic)
         pcall(ESPX.restoreGun)
         pcall(ESPX.restoreFun)
+        pcall(ESPX.restoreReshade)
         pcall(ESPX.stopFreecam)
         pcall(ESPX.clearViewLines)
         pcall(ESPX.restoreHitboxes)
