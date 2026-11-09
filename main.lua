@@ -604,7 +604,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: AVATAR-HUB"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: AVATAR-HUB-2"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1953,6 +1953,29 @@ updateSpectateInfo = function(player)
     end)
 end
 
+-- Asks Roblox's avatar service for one page of a user's saved outfits. Tries the current (v2) endpoint on
+-- roblox.com first, then the same endpoint on a public mirror. If neither gives a usable answer, the error
+-- includes the start of what each one said, so it is clear what went wrong.
+function ESPX.fetchOutfitPage(userId, cursor)
+    local suffix = cursor and ("&paginationToken=" .. cursor) or ""
+    local candidates = {
+        string.format("https://avatar.roblox.com/v2/avatar/users/%d/outfits?itemsPerPage=50&isEditable=true%s", userId, suffix),
+        string.format("https://avatar.roproxy.com/v2/avatar/users/%d/outfits?itemsPerPage=50&isEditable=true%s", userId, suffix),
+    }
+    local problems = {}
+    for _, url in ipairs(candidates) do
+        local okGet, body = pcall(ESPX.httpGet, url)
+        if okGet then
+            local okJson, data = pcall(function() return HttpService:JSONDecode(body) end)
+            if okJson and type(data) == "table" and type(data.data) == "table" then return data end
+            problems[#problems + 1] = string.sub(tostring(body), 1, 120)
+        else
+            problems[#problems + 1] = tostring(body)
+        end
+    end
+    error("the avatar service said: " .. table.concat(problems, "  |  "))
+end
+
 -- Saved avatars: lists the selected player's saved outfits (the Avatar Editor "costumes") as thumbnails.
 -- Click one to inspect it in the 3D preview above. Needs an executor with an HTTP request function.
 do
@@ -2059,24 +2082,14 @@ do
         task.spawn(function()
             local outfits = {}
             local ok, err = pcall(function()
-                for page = 1, 6 do
-                    local url = string.format(
-                        "https://avatar.roblox.com/v1/users/%d/outfits?page=%d&itemsPerPage=50&isEditable=true",
-                        player.UserId, page
-                    )
-                    local okGet, body = pcall(ESPX.httpGet, url)
-                    if not okGet then
-                        -- Second try through a public mirror of the same API.
-                        body = ESPX.httpGet((string.gsub(url, "avatar%.roblox%.com", "avatar.roproxy.com")))
-                    end
-                    local data = HttpService:JSONDecode(body)
-                    if type(data) ~= "table" or type(data.data) ~= "table" then
-                        error("unexpected answer from the avatar service")
-                    end
+                local cursor = nil
+                for _ = 1, 6 do -- up to 6 pages of 50 outfits
+                    local data = ESPX.fetchOutfitPage(player.UserId, cursor)
                     for _, item in ipairs(data.data) do
                         if item.id then outfits[#outfits + 1] = {id = item.id, name = tostring(item.name or item.id)} end
                     end
-                    if #data.data < 50 then break end
+                    cursor = data.nextPageCursor
+                    if type(cursor) ~= "string" or cursor == "" then break end
                 end
             end)
             if token ~= loadToken then return end
