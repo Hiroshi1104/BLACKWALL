@@ -604,7 +604,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: AVATAR-HUB-2"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: AVATAR-HUB-3"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1964,7 +1964,11 @@ function ESPX.fetchOutfitPage(userId, cursor)
     }
     local problems = {}
     for _, url in ipairs(candidates) do
-        local okGet, body = pcall(ESPX.httpGet, url)
+        local okGet, body, status = pcall(ESPX.httpGet, url)
+        if okGet and (status == 429 or string.find(string.lower(tostring(body)), "too many requests", 1, true)) then
+            task.wait(2.5) -- rate limited: wait a moment and ask once more
+            okGet, body, status = pcall(ESPX.httpGet, url)
+        end
         if okGet then
             local okJson, data = pcall(function() return HttpService:JSONDecode(body) end)
             if okJson and type(data) == "table" and type(data.data) == "table" then return data end
@@ -1984,6 +1988,7 @@ do
     statusLabel.Parent = scroll
     statusLabel.BackgroundTransparency = 1
     statusLabel.Size = UDim2.new(1, -20, 0, 32)
+    statusLabel.AutomaticSize = Enum.AutomaticSize.Y
     statusLabel.Font = Enum.Font.Code
     statusLabel.Text = "Select a player, then press Load Saved Avatars."
     statusLabel.TextColor3 = C.muted
@@ -2022,6 +2027,15 @@ do
     gridPadding.PaddingBottom = UDim.new(0, 6)
 
     local loadToken = 0 -- bumped on every load / clear, so a slow answer for an old player is ignored
+    local outfitCache = {} -- [userId] = {time, outfits}: pressing Load again does not ask Roblox again for 3 minutes
+
+    -- Shows a problem in the status line, prints it, and copies it so it can be pasted somewhere.
+    local function showError(text)
+        statusLabel.Text = text
+        print("[BLACKWALL] " .. text)
+        local copyFn = setclipboard or toclipboard
+        if type(copyFn) == "function" then pcall(copyFn, text) end
+    end
 
     local function clearGrid()
         for _, child in ipairs(gridHolder:GetChildren()) do
@@ -2052,7 +2066,7 @@ do
         image.Position = UDim2.new(0, 3, 0, 3)
         image.Size = UDim2.new(1, -6, 0, 86)
         image.ScaleType = Enum.ScaleType.Fit
-        image.Image = string.format("rbxthumb://type=Outfit&id=%d&w=150&h=150", outfit.id)
+        image.Image = string.format("rbxthumb://type=Outfit&id=%.0f&w=150&h=150", outfit.id)
         image.ZIndex = 9
         local nameLabel = Instance.new("TextLabel")
         nameLabel.Parent = cell
@@ -2077,6 +2091,13 @@ do
         loadToken += 1
         local token = loadToken
         clearGrid()
+
+        local cached = outfitCache[player.UserId]
+        if cached and os.clock() - cached.time < 180 then
+            statusLabel.Text = string.format("%d saved avatars (from the last load). Click one to inspect it in 3D.", #cached.outfits)
+            for index, outfit in ipairs(cached.outfits) do addCell(outfit, index) end
+            return "[CACHED]"
+        end
         statusLabel.Text = "Loading the saved avatars of @" .. player.Name .. " ..."
 
         task.spawn(function()
@@ -2094,10 +2115,14 @@ do
             end)
             if token ~= loadToken then return end
             if #outfits == 0 then
-                statusLabel.Text = ok and "No saved avatars found (the player may keep them private)."
-                    or ("Could not load: " .. tostring(err))
+                if ok then
+                    statusLabel.Text = "No saved avatars found (the player may keep them private)."
+                else
+                    showError("Could not load: " .. tostring(err))
+                end
                 return
             end
+            outfitCache[player.UserId] = {time = os.clock(), outfits = outfits}
             statusLabel.Text = string.format("%d saved avatars. Click one to inspect it in the 3D preview.", #outfits)
             for index, outfit in ipairs(outfits) do addCell(outfit, index) end
         end)
@@ -2117,7 +2142,7 @@ do
                 return
             end
             if not ok or typeof(model) ~= "Instance" then
-                statusLabel.Text = "Could not load that avatar: " .. tostring(model)
+                showError("Could not load that avatar: " .. tostring(model))
                 return
             end
             ESPX.showOutfitModel(model, outfit.name)
@@ -2328,7 +2353,7 @@ function ESPX.httpGet(url)
         or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
     if requestFn then
         local response = requestFn({Url = url, Method = "GET"})
-        if response and response.Body then return response.Body end
+        if response and response.Body then return response.Body, response.StatusCode end
     end
     local ok, body = pcall(function() return game:HttpGet(url) end)
     if ok and type(body) == "string" then return body end
