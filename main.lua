@@ -105,6 +105,7 @@ local cfg = {
     rsExposure = 0, rsLightBrightness = 0, rsShadowLift = 0, rsShadowSoftness = 0,
     rsSkylight = 1, rsReflection = 1, rsClockTime = 14, rsVignette = 0.5,
     menuWidth = 460, menuHeight = 620, menuScale = 1, -- size of this menu (drag the corner handle, or use Menu Scale)
+    headCamFov = 90, headCamOffset = 0.6, headCamSmooth = 0, -- first person (head cam) spectate
     camFov = 70, -- camera field of view (used by Custom FOV)
     freecamSpeed = 50, -- freecam move speed (studs/second)
     viewLineLength = 60, -- View Line length in studs
@@ -225,6 +226,7 @@ local function saveSettings()
         rsSkylight = cfg.rsSkylight, rsReflection = cfg.rsReflection,
         rsClockTime = cfg.rsClockTime, rsVignette = cfg.rsVignette,
         menuWidth = cfg.menuWidth, menuHeight = cfg.menuHeight, menuScale = cfg.menuScale,
+        headCamFov = cfg.headCamFov, headCamOffset = cfg.headCamOffset, headCamSmooth = cfg.headCamSmooth,
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
         viewLineLength = cfg.viewLineLength,
@@ -604,7 +606,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: AVATAR-HUB-3"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: HEAD-CAM"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1272,6 +1274,7 @@ local spectateOrbitHeight = 4
 local spectateMouseSensitivity = 0.0035
 
 local function stopSpectating()
+    if ESPX.stopHeadCam then ESPX.stopHeadCam() end
     if spectateRenderConnection then
         spectateRenderConnection:Disconnect()
         spectateRenderConnection = nil
@@ -1385,6 +1388,117 @@ end
 
 local updateSpectateInfo
 
+-- First person spectate ("head cam"): the camera is glued to the target's head, so it turns and leans exactly
+-- like their head does, like a GoPro on a helmet. The head and the accessories on it are hidden on your screen
+-- only (LocalTransparencyModifier), so nothing blocks the view. Own block to save local slots.
+do
+    local function setLocalHidden(state, item)
+        local ok, original = pcall(function() return item.LocalTransparencyModifier end)
+        if not ok then return end
+        if state.hidden[item] == nil then state.hidden[item] = original end
+        if original ~= 1 then pcall(function() item.LocalTransparencyModifier = 1 end) end
+    end
+
+    -- Hides the head (and its face decal) plus every accessory worn on the head. Runs every frame, so hats that
+    -- load late or change are caught too.
+    local function hideHeadParts(state, character, head)
+        setLocalHidden(state, head)
+        for _, child in ipairs(head:GetChildren()) do
+            if child:IsA("Decal") or child:IsA("Texture") then setLocalHidden(state, child) end
+        end
+        for _, accessory in ipairs(character:GetChildren()) do
+            if accessory:IsA("Accessory") then
+                local handle = accessory:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    local weld = handle:FindFirstChildWhichIsA("Weld") or handle:FindFirstChildWhichIsA("WeldConstraint")
+                    local attachedToHead = false
+                    if weld then
+                        local part0 = weld:IsA("Weld") and weld.Part0 or weld.Part0
+                        local part1 = weld.Part1
+                        attachedToHead = (part0 == head) or (part1 == head)
+                    end
+                    if attachedToHead then
+                        setLocalHidden(state, handle)
+                        for _, extra in ipairs(handle:GetDescendants()) do
+                            if extra:IsA("BasePart") or extra:IsA("Decal") or extra:IsA("Texture") then
+                                setLocalHidden(state, extra)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local function restoreHidden(state)
+        for item, original in pairs(state.hidden) do
+            if item.Parent then pcall(function() item.LocalTransparencyModifier = original end) end
+            state.hidden[item] = nil
+        end
+    end
+
+    function ESPX.stopHeadCam()
+        local state = ESPX.headCam
+        if not state then return end
+        ESPX.headCam = nil
+        if state.connection then state.connection:Disconnect() end
+        restoreHidden(state)
+        local camera = ws.CurrentCamera
+        if camera and state.originalFov then camera.FieldOfView = state.originalFov end
+    end
+
+    function ESPX.startHeadCam(player)
+        if not player or player == lplr or player.Parent ~= plrs then
+            error("Select an available player from the list first")
+        end
+        local character = player.Character
+        local head = character and character:FindFirstChild("Head")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not head or not humanoid or humanoid.Health <= 0 then error("Target character is unavailable") end
+        local camera = ws.CurrentCamera
+        if not camera then error("Camera is unavailable") end
+
+        stopSpectating() -- also ends a previous head cam or orbit spectate
+        spectateTargetPlayer = player -- tells Freecam and the respawn handler that a spectate is running
+        local state = {
+            player = player, character = nil, hidden = {}, cframe = nil,
+            originalFov = camera.FieldOfView,
+        }
+        ESPX.headCam = state
+        camera.CameraType = Enum.CameraType.Scriptable
+
+        state.connection = rs.RenderStepped:Connect(function(dt)
+            local currentCamera = ws.CurrentCamera
+            local targetCharacter = player.Character
+            local targetHead = targetCharacter and targetCharacter:FindFirstChild("Head")
+            local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+            if not currentCamera or player.Parent ~= plrs or not targetHead or not targetHumanoid
+                or targetHumanoid.Health <= 0 then
+                stopSpectating()
+                return
+            end
+            if state.character ~= targetCharacter then
+                restoreHidden(state) -- the target respawned: forget the old character
+                state.character = targetCharacter
+                state.cframe = nil
+            end
+            hideHeadParts(state, targetCharacter, targetHead)
+
+            currentCamera.CameraType = Enum.CameraType.Scriptable
+            currentCamera.FieldOfView = cfg.headCamFov
+            -- Eye position: a little above the middle of the head and in front of the face.
+            local wanted = targetHead.CFrame * CFrame.new(0, 0.15, -cfg.headCamOffset)
+            -- Optional smoothing (like a stabilised action cam): 0 = locked to the head.
+            local smooth = math.clamp(cfg.headCamSmooth, 0, 0.95)
+            if state.cframe and smooth > 0 then
+                wanted = state.cframe:Lerp(wanted, 1 - smooth ^ (dt * 60))
+            end
+            state.cframe = wanted
+            currentCamera.CFrame = wanted
+        end)
+    end
+end
+
 local function refreshSpectatePlayers()
     for _, child in ipairs(spectateListScroll:GetChildren()) do
         if child:IsA("TextButton") or child:IsA("TextLabel") then
@@ -1473,9 +1587,15 @@ end)
 createActionButton("Spectate Selected Player", function()
     startSpectating(selectedSpectatePlayer)
 end)
+createActionButton("First Person Spectate (Head Cam)", function()
+    ESPX.startHeadCam(selectedSpectatePlayer)
+end)
 createActionButton("Stop Spectating", function()
     stopSpectating()
 end)
+createSlider("Head Cam FOV", 50, 120, cfg.headCamFov, function(v) cfg.headCamFov = v end, "headCamFov")
+createSlider("Head Cam Forward", 0, 2, cfg.headCamOffset, function(v) cfg.headCamOffset = v end, "headCamOffset", 0.05)
+createSlider("Head Cam Smoothing", 0, 0.95, cfg.headCamSmooth, function(v) cfg.headCamSmooth = v end, "headCamSmooth", 0.05)
 
 -- Selected-player information card, displayed directly below Stop Spectating.
 local spectateInfoCard = Instance.new("Frame")
@@ -4374,6 +4494,7 @@ do
         if not camera then return end
         local active = toggles.GunFOV
             and not toggles.Freecam
+            and not spectateTargetPlayer
             and holdingGun()
             and not uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
         if active then
