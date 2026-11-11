@@ -105,7 +105,7 @@ local cfg = {
     rsExposure = 0, rsLightBrightness = 0, rsShadowLift = 0, rsShadowSoftness = 0,
     rsSkylight = 1, rsReflection = 1, rsClockTime = 14, rsVignette = 0.5,
     menuWidth = 460, menuHeight = 620, menuScale = 1, -- size of this menu (drag the corner handle, or use Menu Scale)
-    headCamFov = 90, headCamOffset = 0.6, headCamSmooth = 0, -- first person (head cam) spectate
+    headCamFov = 90, headCamOffset = 0.6, headCamSmooth = 0, headCamMotion = 1, -- first person (head cam) spectate
     camFov = 70, -- camera field of view (used by Custom FOV)
     freecamSpeed = 50, -- freecam move speed (studs/second)
     viewLineLength = 60, -- View Line length in studs
@@ -227,6 +227,7 @@ local function saveSettings()
         rsClockTime = cfg.rsClockTime, rsVignette = cfg.rsVignette,
         menuWidth = cfg.menuWidth, menuHeight = cfg.menuHeight, menuScale = cfg.menuScale,
         headCamFov = cfg.headCamFov, headCamOffset = cfg.headCamOffset, headCamSmooth = cfg.headCamSmooth,
+        headCamMotion = cfg.headCamMotion,
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
         viewLineLength = cfg.viewLineLength,
@@ -606,7 +607,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: HEAD-CAM"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: HEAD-CAM-2"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1463,6 +1464,8 @@ do
         local state = {
             player = player, character = nil, hidden = {}, cframe = nil,
             originalFov = camera.FieldOfView,
+            -- values used by the motion layer
+            lastYaw = nil, lastPos = nil, rate = 0, speed = 0, phase = 0,
         }
         ESPX.headCam = state
         camera.CameraType = Enum.CameraType.Scriptable
@@ -1481,6 +1484,7 @@ do
                 restoreHidden(state) -- the target respawned: forget the old character
                 state.character = targetCharacter
                 state.cframe = nil
+                state.lastYaw, state.lastPos, state.rate, state.speed = nil, nil, 0, 0
             end
             hideHeadParts(state, targetCharacter, targetHead)
 
@@ -1494,7 +1498,46 @@ do
                 wanted = state.cframe:Lerp(wanted, 1 - smooth ^ (dt * 60))
             end
             state.cframe = wanted
-            currentCamera.CFrame = wanted
+
+            -- Motion layer ("Head Cam Motion"). Most games never turn a player's head separately from the body,
+            -- so a camera fixed to the head would look frozen. This adds what a real head cam would show, using
+            -- only what can be seen of the player: how fast their body turns and how fast they walk.
+            --   look-ahead : the view leads into a turn instead of being glued to the body
+            --   lean       : the view banks a little into the turn
+            --   walk bob   : up/down bounce, side sway and a small nod, scaled by walking speed
+            --   breathing  : a very slow idle drift
+            local motion = cfg.headCamMotion
+            local final = wanted
+            local root = targetCharacter:FindFirstChild("HumanoidRootPart")
+            if motion > 0 and root then
+                local look = root.CFrame.LookVector
+                local yaw = math.atan2(-look.X, -look.Z)
+                local position = root.Position
+                local step = math.max(dt, 1e-3)
+                if state.lastYaw then
+                    local delta = (yaw - state.lastYaw + math.pi) % (2 * math.pi) - math.pi
+                    local rate = math.clamp(delta / step, -12, 12)
+                    state.rate = state.rate + (rate - state.rate) * math.min(1, dt * 10)
+                    local flat = Vector3.new(position.X - state.lastPos.X, 0, position.Z - state.lastPos.Z).Magnitude / step
+                    state.speed = state.speed + (math.min(flat, 40) - state.speed) * math.min(1, dt * 8)
+                end
+                state.lastYaw, state.lastPos = yaw, position
+
+                local walking = math.clamp(state.speed / 14, 0, 1)
+                state.phase += dt * state.speed * 0.9
+                local now = os.clock()
+                local bobY = math.sin(state.phase * 2) * 0.07 * walking
+                local sway = math.sin(state.phase) * math.rad(1.2) * walking
+                local nod = math.sin(state.phase * 2 + 0.6) * math.rad(0.9) * walking
+                local breatheP = math.sin(now * 1.3) * math.rad(0.35)
+                local breatheR = math.sin(now * 0.8 + 1) * math.rad(0.25)
+                local lead = math.clamp(state.rate * 0.12, -math.rad(25), math.rad(25))
+                local lean = math.clamp(state.rate * 0.045, -math.rad(8), math.rad(8))
+                final = wanted
+                    * CFrame.new(0, bobY * motion, 0)
+                    * CFrame.Angles((nod + breatheP) * motion, lead * motion, (lean + sway + breatheR) * motion)
+            end
+            currentCamera.CFrame = final
         end)
     end
 end
@@ -1596,6 +1639,7 @@ end)
 createSlider("Head Cam FOV", 50, 120, cfg.headCamFov, function(v) cfg.headCamFov = v end, "headCamFov")
 createSlider("Head Cam Forward", 0, 2, cfg.headCamOffset, function(v) cfg.headCamOffset = v end, "headCamOffset", 0.05)
 createSlider("Head Cam Smoothing", 0, 0.95, cfg.headCamSmooth, function(v) cfg.headCamSmooth = v end, "headCamSmooth", 0.05)
+createSlider("Head Cam Motion", 0, 2, cfg.headCamMotion, function(v) cfg.headCamMotion = v end, "headCamMotion", 0.05)
 
 -- Selected-player information card, displayed directly below Stop Spectating.
 local spectateInfoCard = Instance.new("Frame")
