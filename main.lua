@@ -55,6 +55,15 @@ local toggles = {
     Ragdoll = false,
     Sit = false,
     Reshade = false,
+    FreecamTrack = false,
+    CleanShot = false,
+    HideCursor = false,
+    CinemaBars = false,
+    PhotoGrid = false,
+    FreezePose = false,
+    HideNametags = false,
+    HideOthers = false,
+    HideNPCs = false,
     RsClean = false,
     RsNoShadows = false,
     RsTime = false,
@@ -106,6 +115,7 @@ local cfg = {
     rsSkylight = 1, rsReflection = 1, rsClockTime = 14, rsVignette = 0.5,
     menuWidth = 460, menuHeight = 620, menuScale = 1, -- size of this menu (drag the corner handle, or use Menu Scale)
     headCamFov = 90, headCamOffset = 0.6, headCamSmooth = 0, headCamMotion = 1, -- first person (head cam) spectate
+    freecamRoll = 0, freecamSmooth = 0, camSlot = 1, barSize = 0.12, -- photo mode extras
     camFov = 70, -- camera field of view (used by Custom FOV)
     freecamSpeed = 50, -- freecam move speed (studs/second)
     viewLineLength = 60, -- View Line length in studs
@@ -146,6 +156,9 @@ end
 toggles.RemoveUI = false -- never start with the game UI hidden, even if it was on when last saved
 toggles.Ragdoll = false -- never start ragdolled or sitting
 toggles.Sit = false
+toggles.FreezePose = false -- photo toys never start switched on
+toggles.CleanShot = false
+toggles.HideCursor = false
 if type(loadedSettings.cfg) == "table" then
     for key, value in pairs(loadedSettings.cfg) do
         if type(cfg[key]) == "number" and type(value) == "number" then cfg[key] = value end
@@ -228,6 +241,7 @@ local function saveSettings()
         menuWidth = cfg.menuWidth, menuHeight = cfg.menuHeight, menuScale = cfg.menuScale,
         headCamFov = cfg.headCamFov, headCamOffset = cfg.headCamOffset, headCamSmooth = cfg.headCamSmooth,
         headCamMotion = cfg.headCamMotion,
+        freecamRoll = cfg.freecamRoll, freecamSmooth = cfg.freecamSmooth, camSlot = cfg.camSlot, barSize = cfg.barSize,
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
         viewLineLength = cfg.viewLineLength,
@@ -607,7 +621,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: HEAD-CAM-2"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: PHOTO-TAB-2"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -733,7 +747,7 @@ local function setTab(name)
     layout = scroll and scroll:FindFirstChildOfClass("UIListLayout")
 end
 
-for order, name in ipairs({"Main", "Visual", "Shader", "Movement", "Overwatch", "Fun", "Settings", "Binds"}) do
+for order, name in ipairs({"Main", "Visual", "Shader", "Photo", "Movement", "Overwatch", "Fun", "Settings", "Binds"}) do
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.Parent = main
@@ -763,7 +777,7 @@ for order, name in ipairs({"Main", "Visual", "Shader", "Movement", "Overwatch", 
     button.Name = name .. "Tab"
     button.Parent = tabBar
     button.LayoutOrder = order
-    local tabWidths = {Main = 36, Visual = 42, Shader = 42, Movement = 54, Overwatch = 66, Fun = 30, Settings = 48, Binds = 38}
+    local tabWidths = {Main = 36, Visual = 42, Shader = 42, Photo = 38, Movement = 54, Overwatch = 66, Fun = 30, Settings = 48, Binds = 38}
     button.Size = UDim2.new(0, tabWidths[name] or 60, 1, 0)
     button.BackgroundColor3 = C.panel
     button.BorderSizePixel = 0
@@ -1160,24 +1174,6 @@ createSlider("View Line Length", 10, 300, cfg.viewLineLength, function(v) cfg.vi
 createSection("[ WORLD ]")
 createToggle("Fullbright", "Fullbright")
 createToggle("No Fog", "NoFog")
-createToggle("Custom FOV", "CustomFOV")
-createSlider("Camera FOV", 30, 120, cfg.camFov, function(v) cfg.camFov = v end, "camFov")
-createSection("[ CINEMATIC ]")
-createToggle("Remove UI", "RemoveUI")
-createActionButton("Restore UI", function()
-    toggles.RemoveUI = false
-    if ESPX.togglePaints.RemoveUI then ESPX.togglePaints.RemoveUI() end
-    if ESPX.restoreUI then ESPX.restoreUI() end
-    saveSettings()
-end)
-createToggle("Remove Near Blur", "RemoveNearBlur")
-createToggle("Custom DoF", "CustomDoF")
-createToggle("DoF Auto Focus", "DoFAutoFocus")
-createSlider("DoF Far Intensity", 0, 1, cfg.dofFar, function(v) cfg.dofFar = v end, "dofFar")
-createSlider("DoF Near Intensity", 0, 1, cfg.dofNear, function(v) cfg.dofNear = v end, "dofNear")
-createSlider("DoF Focus Distance", 0, 100, cfg.dofFocusDistance, function(v) cfg.dofFocusDistance = v end, "dofFocusDistance", 0.5)
-createSlider("DoF Focus Radius", 0, 50, cfg.dofFocusRadius, function(v) cfg.dofFocusRadius = v end, "dofFocusRadius", 0.5)
-createSlider("DoF Layers", 1, 3, cfg.dofLayers, function(v) cfg.dofLayers = v end, "dofLayers", 1)
 createSection("[ CROSSHAIR ]")
 createToggle("Crosshair", "Crosshair")
 createSlider("Crosshair Size", 1, 12, cfg.crosshairSize, function(v) cfg.crosshairSize = v end, "crosshairSize")
@@ -1212,20 +1208,6 @@ createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end, "flySpeed")
 
 -- Overwatch uses one shared player list for teleporting, spectating, and player info.
 setTab("Overwatch")
-
-createSection("[ FREECAM ]")
-createToggle("Freecam", "Freecam")
-createSlider("Freecam Speed", 1, 300, cfg.freecamSpeed, function(v) cfg.freecamSpeed = v end, "freecamSpeed")
-createActionButton("Teleport to Freecam Position", function()
-    local target = ESPX.getFreecamPos and ESPX.getFreecamPos()
-    if not target then error("Turn Freecam on first") end
-    local character = lplr.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not root then error("Your character is unavailable") end
-    -- Keep your current facing, move to where the camera is, and drop any leftover momentum.
-    root.CFrame = CFrame.new(target) * (root.CFrame - root.CFrame.Position)
-    root.AssemblyLinearVelocity = Vector3.zero
-end)
 
 local selectedSpectatePlayer = nil
 local updateSpectateInfo
@@ -2334,6 +2316,59 @@ ESPX.track(lplr.CharacterAdded:Connect(function()
 end))
 
 -- Gun tab and its obsolete weapon features have been removed.
+
+-- Photo: everything for taking screenshots and cinematic shots (free camera, FOV, hiding the interface, depth of field).
+setTab("Photo")
+createSection("[ FREECAM ]")
+createToggle("Freecam", "Freecam")
+createSlider("Freecam Speed", 1, 300, cfg.freecamSpeed, function(v) cfg.freecamSpeed = v end, "freecamSpeed")
+createSlider("Freecam Smoothing", 0, 0.95, cfg.freecamSmooth, function(v) cfg.freecamSmooth = v end, "freecamSmooth", 0.05)
+createSlider("Freecam Roll", -180, 180, cfg.freecamRoll, function(v) cfg.freecamRoll = v end, "freecamRoll")
+createToggle("Freecam Track Player", "FreecamTrack")
+createActionButton("Teleport to Freecam Position", function()
+    local target = ESPX.getFreecamPos and ESPX.getFreecamPos()
+    if not target then error("Turn Freecam on first") end
+    local character = lplr.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then error("Your character is unavailable") end
+    -- Keep your current facing, move to where the camera is, and drop any leftover momentum.
+    root.CFrame = CFrame.new(target) * (root.CFrame - root.CFrame.Position)
+    root.AssemblyLinearVelocity = Vector3.zero
+end)
+createSection("[ CAMERA SLOTS ]")
+createSlider("Camera Slot", 1, 5, cfg.camSlot, function(v) cfg.camSlot = v end, "camSlot", 1)
+createActionButton("Save Camera Slot", function() return ESPX.saveCameraSlot(math.floor(cfg.camSlot + 0.5)) end)
+createActionButton("Go To Camera Slot", function() return ESPX.loadCameraSlot(math.floor(cfg.camSlot + 0.5)) end)
+createSection("[ CAMERA ]")
+createToggle("Custom FOV", "CustomFOV")
+createSlider("Camera FOV", 30, 120, cfg.camFov, function(v) cfg.camFov = v end, "camFov")
+createSection("[ INTERFACE ]")
+createToggle("Remove UI", "RemoveUI")
+createActionButton("Restore UI", function()
+    toggles.RemoveUI = false
+    if ESPX.togglePaints.RemoveUI then ESPX.togglePaints.RemoveUI() end
+    if ESPX.restoreUI then ESPX.restoreUI() end
+    saveSettings()
+end)
+createToggle("Clean Shot", "CleanShot")
+createToggle("Hide Cursor", "HideCursor")
+createToggle("Cinematic Bars", "CinemaBars")
+createSlider("Bar Size", 0, 0.35, cfg.barSize, function(v) cfg.barSize = v end, "barSize")
+createToggle("Composition Grid", "PhotoGrid")
+createSection("[ SCENE ]")
+createToggle("Freeze Pose", "FreezePose")
+createToggle("Hide Nametags", "HideNametags")
+createToggle("Hide Other Players", "HideOthers")
+createToggle("Hide NPCs", "HideNPCs")
+createSection("[ BLUR & DEPTH OF FIELD ]")
+createToggle("Remove Near Blur", "RemoveNearBlur")
+createToggle("Custom DoF", "CustomDoF")
+createToggle("DoF Auto Focus", "DoFAutoFocus")
+createSlider("DoF Far Intensity", 0, 1, cfg.dofFar, function(v) cfg.dofFar = v end, "dofFar")
+createSlider("DoF Near Intensity", 0, 1, cfg.dofNear, function(v) cfg.dofNear = v end, "dofNear")
+createSlider("DoF Focus Distance", 0, 100, cfg.dofFocusDistance, function(v) cfg.dofFocusDistance = v end, "dofFocusDistance", 0.5)
+createSlider("DoF Focus Radius", 0, 50, cfg.dofFocusRadius, function(v) cfg.dofFocusRadius = v end, "dofFocusRadius", 0.5)
+createSlider("DoF Layers", 1, 3, cfg.dofLayers, function(v) cfg.dofLayers = v end, "dofLayers", 1)
 
 -- Shader: reshade-style color grading, bloom, lighting, shadows and a vignette.
 -- Everything is neutral by default, so turning Reshade on changes nothing until you move a slider or pick a preset.
@@ -4042,7 +4077,8 @@ end
 do
     local cas = game:GetService("ContextActionService")
     local SINK_ACTION = "HRSH_FreecamSink"
-    local fc = {active = false, looking = false, yaw = 0, pitch = 0, pos = Vector3.zero}
+    local fc = {active = false, looking = false, yaw = 0, pitch = 0, pos = Vector3.zero, smoothed = nil, pending = nil}
+    local slots = {} -- saved camera positions (kept until the script is closed)
 
     local function sinkInput()
         return Enum.ContextActionResult.Sink
@@ -4055,6 +4091,7 @@ do
         fc.yaw = math.atan2(-look.X, -look.Z)
         fc.pitch = math.asin(math.clamp(look.Y, -1, 1))
         fc.pos = camera.CFrame.Position
+        fc.smoothed = nil
         fc.active = true
         -- Stop the character from walking/jumping while WASD and Space move the camera instead.
         cas:BindActionAtPriority(
@@ -4069,6 +4106,7 @@ do
         if not fc.active then return end
         fc.active = false
         fc.looking = false
+        fc.smoothed = nil
         pcall(function() uis.MouseBehavior = Enum.MouseBehavior.Default end)
         pcall(function() cas:UnbindAction(SINK_ACTION) end)
         local camera = ws.CurrentCamera
@@ -4110,6 +4148,30 @@ do
             if not fc.active then startFreecam() end
             camera.CameraType = Enum.CameraType.Scriptable
 
+            -- A saved camera slot waiting to be applied.
+            if fc.pending then
+                local slot = fc.pending
+                fc.pending = nil
+                fc.pos, fc.yaw, fc.pitch = slot.pos, slot.yaw, slot.pitch
+                fc.smoothed = nil
+            end
+
+            -- Track Player: keep the camera pointed at the selected player (or at yourself if nobody is selected).
+            if toggles.FreecamTrack then
+                local subject = selectedSpectatePlayer
+                local subjectCharacter = (subject and subject.Parent == plrs and subject.Character) or lplr.Character
+                local subjectPart = subjectCharacter
+                    and (subjectCharacter:FindFirstChild("Head") or subjectCharacter:FindFirstChild("HumanoidRootPart"))
+                if subjectPart then
+                    local direction = subjectPart.Position - fc.pos
+                    if direction.Magnitude > 0.5 then
+                        direction = direction.Unit
+                        fc.yaw = math.atan2(-direction.X, -direction.Z)
+                        fc.pitch = math.clamp(math.asin(math.clamp(direction.Y, -1, 1)), math.rad(-89), math.rad(89))
+                    end
+                end
+            end
+
             local rotation = CFrame.fromOrientation(fc.pitch, fc.yaw, 0)
             if not uis:GetFocusedTextBox() then
                 local move = Vector3.zero
@@ -4124,7 +4186,14 @@ do
                     fc.pos += move.Unit * speed * dt
                 end
             end
-            camera.CFrame = CFrame.new(fc.pos) * rotation
+            -- Roll (tilt) and optional smoothing ("floaty" camera movement).
+            local target = CFrame.new(fc.pos) * rotation * CFrame.Angles(0, 0, math.rad(cfg.freecamRoll))
+            local smooth = math.clamp(cfg.freecamSmooth, 0, 0.95)
+            if fc.smoothed and smooth > 0 then
+                target = fc.smoothed:Lerp(target, 1 - smooth ^ (dt * 60))
+            end
+            fc.smoothed = target
+            camera.CFrame = target
         elseif fc.active then
             stopFreecam()
         end
@@ -4135,6 +4204,35 @@ do
     ESPX.getFreecamPos = function()
         if fc.active then return fc.pos end
         return nil
+    end
+
+    -- Camera slots: remember a camera position and angle, and fly back to it later (turns Freecam on if needed).
+    ESPX.saveCameraSlot = function(index)
+        local camera = ws.CurrentCamera
+        local position, yaw, pitch
+        if fc.active then
+            position, yaw, pitch = fc.pos, fc.yaw, fc.pitch
+        elseif camera then
+            local look = camera.CFrame.LookVector
+            position = camera.CFrame.Position
+            yaw = math.atan2(-look.X, -look.Z)
+            pitch = math.asin(math.clamp(look.Y, -1, 1))
+        else
+            error("No camera available")
+        end
+        slots[index] = {pos = position, yaw = yaw, pitch = pitch}
+        return "[SAVED SLOT " .. index .. "]"
+    end
+
+    ESPX.loadCameraSlot = function(index)
+        local slot = slots[index]
+        if not slot then error("Slot " .. index .. " is empty") end
+        fc.pending = slot
+        if not toggles.Freecam then
+            toggles.Freecam = true
+            if ESPX.togglePaints.Freecam then ESPX.togglePaints.Freecam() end
+        end
+        return "[SLOT " .. index .. "]"
     end
 end
 
@@ -4991,6 +5089,252 @@ do
     end
 end
 
+-- Photo extras: freeze your pose, hide the world's clutter, cursor, letterbox bars and a composition grid.
+-- Everything is local to your screen and is put back when switched off. Own block to save local slots.
+do
+    local CLEAN_KEYS = {
+        "ESP", "EnemyHP", "PlayerESP", "SelfHP", "ItemESP", "GeneratorESP",
+        "Crosshair", "HeadArrow", "ViewLine", "HitboxExtender",
+    }
+    local frozenTracks = {}   -- [AnimationTrack] = its speed before freezing
+    local cleanSaved = nil    -- the toggles Clean Shot switched off
+    local lastClean = false
+    local nameOriginal = {}   -- [Humanoid] = {DisplayDistanceType, HealthDisplayType}
+    local hiddenByModel = {}  -- [model] = {[item] = LocalTransparencyModifier before hiding}
+    local cursorOriginal = nil
+    local barsGui, barFrames = nil, {}
+    local gridGui = nil
+
+    local function updateFreezePose()
+        local character = lplr.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+        if toggles.FreezePose and animator then
+            for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                if frozenTracks[track] == nil then frozenTracks[track] = track.Speed end
+                if track.Speed ~= 0 then track:AdjustSpeed(0) end
+            end
+        elseif next(frozenTracks) ~= nil then
+            for track, speed in pairs(frozenTracks) do
+                pcall(function() track:AdjustSpeed(speed) end)
+                frozenTracks[track] = nil
+            end
+        end
+    end
+
+    -- Clean Shot: switches off every overlay feature (ESP, labels, crosshair ...) and brings back the ones that were on.
+    local function updateCleanShot()
+        if toggles.CleanShot == lastClean then return end
+        lastClean = toggles.CleanShot
+        if lastClean then
+            cleanSaved = {}
+            for _, key in ipairs(CLEAN_KEYS) do
+                if toggles[key] then
+                    cleanSaved[#cleanSaved + 1] = key
+                    local flip = ESPX.toggleFlips[key]
+                    if flip then flip() end
+                end
+            end
+        elseif cleanSaved then
+            for _, key in ipairs(cleanSaved) do
+                if not toggles[key] then
+                    local flip = ESPX.toggleFlips[key]
+                    if flip then flip() end
+                end
+            end
+            cleanSaved = nil
+        end
+    end
+
+    local function updateNametags()
+        if toggles.HideNametags then
+            local function hideNames(humanoid)
+                if nameOriginal[humanoid] == nil then
+                    nameOriginal[humanoid] = {humanoid.DisplayDistanceType, humanoid.HealthDisplayType}
+                end
+                humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+                humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+            end
+            for _, plr in ipairs(plrs:GetPlayers()) do
+                local humanoid = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then pcall(hideNames, humanoid) end
+            end
+            for _, model in ipairs(ws:GetChildren()) do
+                if model:IsA("Model") then
+                    local humanoid = model:FindFirstChildOfClass("Humanoid")
+                    if humanoid then pcall(hideNames, humanoid) end
+                end
+            end
+        elseif next(nameOriginal) ~= nil then
+            for humanoid, original in pairs(nameOriginal) do
+                if humanoid.Parent then
+                    pcall(function()
+                        humanoid.DisplayDistanceType = original[1]
+                        humanoid.HealthDisplayType = original[2]
+                    end)
+                end
+                nameOriginal[humanoid] = nil
+            end
+        end
+    end
+
+    local function restoreModel(model)
+        local saved = hiddenByModel[model]
+        if not saved then return end
+        for item, original in pairs(saved) do
+            if item.Parent then pcall(function() item.LocalTransparencyModifier = original end) end
+        end
+        hiddenByModel[model] = nil
+    end
+
+    -- Hide Other Players / Hide NPCs: makes those characters invisible on your screen only.
+    local function updateHidden()
+        local wanted = {}
+        if toggles.HideOthers then
+            for _, plr in ipairs(plrs:GetPlayers()) do
+                if plr ~= lplr and plr.Character then wanted[plr.Character] = true end
+            end
+        end
+        if toggles.HideNPCs then
+            for _, model in ipairs(ws:GetChildren()) do
+                if model:IsA("Model") and model:FindFirstChildOfClass("Humanoid")
+                    and not plrs:GetPlayerFromCharacter(model) then
+                    wanted[model] = true
+                end
+            end
+        end
+        for model in pairs(wanted) do
+            local saved = hiddenByModel[model]
+            if not saved then
+                saved = {}
+                hiddenByModel[model] = saved
+            end
+            for _, item in ipairs(model:GetDescendants()) do
+                if item:IsA("BasePart") or item:IsA("Decal") or item:IsA("Texture") then
+                    if saved[item] == nil then
+                        pcall(function() saved[item] = item.LocalTransparencyModifier end)
+                    end
+                    pcall(function() item.LocalTransparencyModifier = 1 end)
+                end
+            end
+        end
+        for model in pairs(hiddenByModel) do
+            if not wanted[model] then restoreModel(model) end
+        end
+    end
+
+    -- The cursor is only hidden while the menu is closed, so the menu stays usable.
+    local function updateCursor()
+        if toggles.HideCursor and not main.Visible then
+            if cursorOriginal == nil then cursorOriginal = uis.MouseIconEnabled end
+            if uis.MouseIconEnabled then uis.MouseIconEnabled = false end
+        elseif cursorOriginal ~= nil then
+            uis.MouseIconEnabled = cursorOriginal
+            cursorOriginal = nil
+        end
+    end
+
+    local function newOverlay(name, order)
+        local overlay = Instance.new("ScreenGui")
+        overlay.Name = name
+        overlay.ResetOnSpawn = false
+        overlay.IgnoreGuiInset = true
+        overlay.DisplayOrder = order
+        overlay.Parent = cg
+        return overlay
+    end
+
+    local function updateBars()
+        if toggles.CinemaBars then
+            if not (barsGui and barsGui.Parent) then
+                barsGui = newOverlay("HRSH_Bars", 999991)
+                barFrames = {}
+                for index, anchorY in ipairs({0, 1}) do
+                    local bar = Instance.new("Frame")
+                    bar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                    bar.BorderSizePixel = 0
+                    bar.AnchorPoint = Vector2.new(0, anchorY)
+                    bar.Position = UDim2.new(0, 0, anchorY, 0)
+                    bar.Parent = barsGui
+                    barFrames[index] = bar
+                end
+            end
+            barsGui.Enabled = true
+            local size = math.clamp(cfg.barSize, 0, 0.35)
+            for _, bar in ipairs(barFrames) do bar.Size = UDim2.new(1, 0, size, 0) end
+        elseif barsGui and barsGui.Parent then
+            barsGui.Enabled = false
+        end
+    end
+
+    -- Rule-of-thirds lines (plus a faint center cross) as a composition aid.
+    local function updateGrid()
+        if toggles.PhotoGrid then
+            if not (gridGui and gridGui.Parent) then
+                gridGui = newOverlay("HRSH_Grid", 999992)
+                local function line(size, position)
+                    local frame = Instance.new("Frame")
+                    frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                    frame.BackgroundTransparency = 0.6
+                    frame.BorderSizePixel = 0
+                    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+                    frame.Size = size
+                    frame.Position = position
+                    frame.Parent = gridGui
+                end
+                line(UDim2.new(0, 1, 1, 0), UDim2.new(1 / 3, 0, 0.5, 0))
+                line(UDim2.new(0, 1, 1, 0), UDim2.new(2 / 3, 0, 0.5, 0))
+                line(UDim2.new(1, 0, 0, 1), UDim2.new(0.5, 0, 1 / 3, 0))
+                line(UDim2.new(1, 0, 0, 1), UDim2.new(0.5, 0, 2 / 3, 0))
+            end
+            gridGui.Enabled = true
+        elseif gridGui and gridGui.Parent then
+            gridGui.Enabled = false
+        end
+    end
+
+    task.spawn(function()
+        local pass = 0
+        while not terminated do
+            updateFreezePose()
+            updateCleanShot()
+            updateCursor()
+            updateBars()
+            updateGrid()
+            if pass % 5 == 0 then -- the heavier scans only twice a second
+                updateNametags()
+                updateHidden()
+            end
+            pass += 1
+            task.wait(0.1)
+        end
+    end)
+
+    -- Used by the Terminate button.
+    ESPX.restorePhoto = function()
+        for track, speed in pairs(frozenTracks) do
+            pcall(function() track:AdjustSpeed(speed) end)
+            frozenTracks[track] = nil
+        end
+        for humanoid, original in pairs(nameOriginal) do
+            if humanoid.Parent then
+                pcall(function()
+                    humanoid.DisplayDistanceType = original[1]
+                    humanoid.HealthDisplayType = original[2]
+                end)
+            end
+            nameOriginal[humanoid] = nil
+        end
+        for model in pairs(hiddenByModel) do restoreModel(model) end
+        if cursorOriginal ~= nil then
+            uis.MouseIconEnabled = cursorOriginal
+            cursorOriginal = nil
+        end
+        if barsGui then barsGui:Destroy() barsGui = nil end
+        if gridGui then gridGui:Destroy() gridGui = nil end
+    end
+end
+
 -- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
     local function getGeneratorColor()
@@ -5357,6 +5701,7 @@ do
         pcall(ESPX.restoreGun)
         pcall(ESPX.restoreFun)
         pcall(ESPX.restoreReshade)
+        pcall(ESPX.restorePhoto)
         pcall(ESPX.stopFreecam)
         pcall(ESPX.clearViewLines)
         pcall(ESPX.restoreHitboxes)
