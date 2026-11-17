@@ -9,7 +9,6 @@ local cg = game:GetService("CoreGui")
 local cam = ws.CurrentCamera
 local lplr = plrs.LocalPlayer
 
--- Set to true by the Terminate button. Stops loops and blocks all file saving.
 local terminated = false
 
 local flySpeed = 55
@@ -42,6 +41,7 @@ local toggles = {
     CustomFOV = false,
     Freecam = false,
     ViewLine = false,
+    ProjectilePreview = false,
     AntiAFK = false,
     HitboxExtender = false,
     HitboxHead = true,
@@ -77,7 +77,6 @@ local toggles = {
     DelCorpses = false,
     Speed = false,
     GatherNPCs = false,
-    -- Optimization
     LowVisuals = false,
     InstanceOptimizer = false,
     ParticleCap = false,
@@ -98,48 +97,46 @@ local cfg = {
     scanRate = 0.5,
     speed = 16,
     gatherDistance = 8,
-    npcFillOpacity = 0.5, -- NPC ESP fill opacity
-    npcOutlineOpacity = 1, -- NPC ESP outline opacity
-    playerFillOpacity = 0.5, -- Player ESP fill opacity
-    playerOutlineOpacity = 1, -- Player ESP outline opacity
-    genFillOpacity = 0.5, -- Generator ESP fill opacity (0 = invisible, 1 = solid)
-    genOutlineOpacity = 1, -- Generator ESP outline opacity
-    genHue = 33, -- Generator ESP color hue in degrees (33 = orange)
-    textOpacity = 1, -- overhead text opacity
-    textSize = 13, -- overhead text size
-    -- Reshade (all neutral by default: 0 / 1 means "no change")
+    npcFillOpacity = 0.5,
+    npcOutlineOpacity = 1,
+    playerFillOpacity = 0.5,
+    playerOutlineOpacity = 1,
+    genFillOpacity = 0.5,
+    genOutlineOpacity = 1,
+    genHue = 33,
+    textOpacity = 1,
+    textSize = 13,
     rsBrightness = 0, rsContrast = 0, rsSaturation = 0, rsTintHue = 0, rsTintStrength = 0,
     rsBloomIntensity = 0, rsBloomSize = 24, rsBloomThreshold = 2,
     rsSunIntensity = 0, rsSunSpread = 0.5,
     rsExposure = 0, rsLightBrightness = 0, rsShadowLift = 0, rsShadowSoftness = 0,
     rsSkylight = 1, rsReflection = 1, rsClockTime = 14, rsVignette = 0.5,
-    menuWidth = 460, menuHeight = 620, menuScale = 1, -- size of this menu (drag the corner handle, or use Menu Scale)
-    headCamFov = 90, headCamOffset = 0.6, headCamSmooth = 0, headCamMotion = 1, -- first person (head cam) spectate
-    freecamRoll = 0, freecamSmooth = 0, camSlot = 1, barSize = 0.12, -- photo mode extras
-    camFov = 70, -- camera field of view (used by Custom FOV)
-    freecamSpeed = 50, -- freecam move speed (studs/second)
-    viewLineLength = 60, -- View Line length in studs
-    hitboxSize = 8, -- Hitbox Extender: size (studs) of each extended part
-    hitboxTransparency = 0.7, -- Hitbox Extender: how see-through the extended parts are
-    dofFar = 0.8, -- Custom DoF: far blur strength
-    dofNear = 0, -- Custom DoF: near blur strength
-    dofFocusDistance = 10, -- Custom DoF: distance (studs) that is perfectly sharp (also the Auto Focus fallback)
-    dofFocusRadius = 5, -- Custom DoF: depth around the focus distance that stays sharp
-    dofLayers = 1, -- Custom DoF: how many effects are stacked (stronger blur)
-    gunFov = 90, -- Gun FOV: camera FOV while holding a gun (not aiming)
-    crosshairSize = 3, -- crosshair dot radius
-    crosshairOpacity = 1, -- crosshair dot opacity
-    crosshairHue = 0, -- crosshair color hue in degrees
-    crosshairSat = 0, -- crosshair color saturation (0 = white)
+    menuWidth = 460, menuHeight = 620, menuScale = 1,
+    headCamFov = 90, headCamOffset = 0.6, headCamSmooth = 0, headCamMotion = 1,
+    freecamRoll = 0, freecamSmooth = 0, camSlot = 1, barSize = 0.12,
+    camFov = 70,
+    freecamSpeed = 50,
+    viewLineLength = 60,
+    projSpeed = 150, projGravity = 0.3, projRange = 300, projPitch = 0, projHeight = 1.5, projForward = 2,
+    hitboxSize = 8,
+    hitboxTransparency = 0.7,
+    dofFar = 0.8,
+    dofNear = 0,
+    dofFocusDistance = 10,
+    dofFocusRadius = 5,
+    dofLayers = 1,
+    gunFov = 90,
+    crosshairSize = 3,
+    crosshairOpacity = 1,
+    crosshairHue = 0,
+    crosshairSat = 0,
 }
 
--- Shared state table (helper functions are added to it further down).
 local ESPX = {}
-ESPX.toggleList = {}   -- every createToggle(): {name, key}, in creation order
-ESPX.togglePaints = {} -- [key] = function that repaints the toggle
-ESPX.toggleFlips = {}  -- [key] = function that flips the toggle exactly like clicking it
-ESPX.sliders = {}      -- sliders that can be reset: {key, set}
--- Snapshot of the built-in defaults, taken before saved settings are loaded (for "Reset to Defaults").
+ESPX.toggleList = {}
+ESPX.togglePaints = {}
+ESPX.toggleFlips = {}
+ESPX.sliders = {}
 ESPX.defaultToggles = {}
 for key, value in pairs(toggles) do ESPX.defaultToggles[key] = value end
 ESPX.defaultCfg = {}
@@ -147,16 +144,15 @@ for key, value in pairs(cfg) do
     if type(value) == "number" then ESPX.defaultCfg[key] = value end
 end
 
--- Restore only known, serializable settings; preserve defaults for missing/invalid values.
 if type(loadedSettings.toggles) == "table" then
     for key, value in pairs(loadedSettings.toggles) do
         if toggles[key] ~= nil and type(value) == "boolean" then toggles[key] = value end
     end
 end
-toggles.RemoveUI = false -- never start with the game UI hidden, even if it was on when last saved
-toggles.Ragdoll = false -- never start ragdolled or sitting
+toggles.RemoveUI = false
+toggles.Ragdoll = false
 toggles.Sit = false
-toggles.FreezePose = false -- photo toys never start switched on
+toggles.FreezePose = false
 toggles.CleanShot = false
 toggles.HideCursor = false
 if type(loadedSettings.cfg) == "table" then
@@ -166,20 +162,16 @@ if type(loadedSettings.cfg) == "table" then
 end
 if type(loadedSettings.flySpeed) == "number" then flySpeed = math.clamp(loadedSettings.flySpeed, 1, 200) end
 
--- Shared helpers: overhead text style and ESP colors.
--- Service connections are registered here so Terminate can disconnect every one of them.
 ESPX.conns = {}
 function ESPX.track(connection)
     ESPX.conns[#ESPX.conns + 1] = connection
     return connection
 end
 
--- Noclip keeps a cached list of the character's parts instead of re-walking it every frame.
 ESPX.noclipParts = {}
 ESPX.noclipChar = nil
 ESPX.noclipBuilt = 0
 
--- Overhead text: one master toggle, opacity and size for every floating label.
 function ESPX.styleText(label, gui)
     if gui then gui.Enabled = toggles.OverheadText end
     if label then
@@ -214,8 +206,6 @@ local function saveSettings()
     if terminated then return false end
     if type(writefile) ~= "function" then return false end
 
-    -- JSONEncode cannot serialize Color3 / other Roblox datatypes in cfg.
-    -- Save only the numeric config fields that this menu actually edits.
     local numericCfg = {
         aimStrength = cfg.aimStrength,
         fov = cfg.fov,
@@ -245,6 +235,8 @@ local function saveSettings()
         camFov = cfg.camFov,
         freecamSpeed = cfg.freecamSpeed,
         viewLineLength = cfg.viewLineLength,
+        projSpeed = cfg.projSpeed, projGravity = cfg.projGravity, projRange = cfg.projRange,
+        projPitch = cfg.projPitch, projHeight = cfg.projHeight, projForward = cfg.projForward,
         hitboxSize = cfg.hitboxSize,
         hitboxTransparency = cfg.hitboxTransparency,
         dofFar = cfg.dofFar,
@@ -280,7 +272,6 @@ local function saveSettings()
     return true
 end
 
--- Sliders call this while dragging: wait until the value stops changing, then write the file once.
 ESPX.saveToken = 0
 function ESPX.queueSave()
     ESPX.saveToken += 1
@@ -290,27 +281,24 @@ function ESPX.queueSave()
     end)
 end
 
--- UI ONLY: refreshed HRSH interface. Feature logic below this block is unchanged.
 local oldGui = cg:FindFirstChild("OmniMenu")
 if oldGui then oldGui:Destroy() end
 
 local C = {
-    -- BLACKWALL palette: pitch-black surfaces, red UI accents, cyan TRUE, red FALSE
     bg = Color3.fromRGB(0, 0, 0),
     panel = Color3.fromRGB(7, 7, 8),
     panel2 = Color3.fromRGB(18, 5, 7),
     hover = Color3.fromRGB(42, 8, 12),
-    accent = Color3.fromRGB(220, 24, 42), -- red = general UI accents
+    accent = Color3.fromRGB(220, 24, 42),
     accentDark = Color3.fromRGB(150, 10, 24),
-    trueState = Color3.fromRGB(0, 220, 235), -- cyan = TRUE / enabled
+    trueState = Color3.fromRGB(0, 220, 235),
     outline = Color3.fromRGB(125, 16, 28),
     text = Color3.fromRGB(242, 242, 245),
     muted = Color3.fromRGB(155, 135, 138),
-    off = Color3.fromRGB(220, 24, 42), -- red = FALSE / disabled
+    off = Color3.fromRGB(220, 24, 42),
     green = Color3.fromRGB(0, 220, 235),
 }
 
--- Blackwall style is hard-edged: UICorner calls are intentionally no-ops.
 local function corner(parent, radius)
     return nil
 end
@@ -337,7 +325,7 @@ local TweenService = game:GetService("TweenService")
 local main = Instance.new("Frame")
 main.Name = "main"
 main.Parent = gui
-main.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- colored by the gradient below
+main.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 main.BorderSizePixel = 0
 main.Position = UDim2.new(0.035, 0, 0.12, 0)
 main.Size = UDim2.new(0, cfg.menuWidth, 0, cfg.menuHeight)
@@ -350,13 +338,11 @@ sizeConstraint.Parent = main
 sizeConstraint.MinSize = Vector2.new(340, 420)
 sizeConstraint.MaxSize = Vector2.new(1100, 1000)
 
--- Menu scale (UIScale) and a resize handle in the bottom-right corner. Own block to save local slots.
 do
     local menuScale = Instance.new("UIScale")
     menuScale.Scale = math.clamp(cfg.menuScale, 0.6, 1.8)
     menuScale.Parent = main
 
-    -- Re-applies the saved size and scale (used by the Menu Scale slider and Reset to Defaults).
     ESPX.applyMenuSize = function()
         main.Size = UDim2.new(0, cfg.menuWidth, 0, cfg.menuHeight)
         menuScale.Scale = math.clamp(cfg.menuScale, 0.6, 1.8)
@@ -372,7 +358,6 @@ do
     handle.Text = ""
     handle.AutoButtonColor = false
     handle.ZIndex = 80
-    -- Three grip dots, drawn in a triangle.
     for _, offset in ipairs({Vector2.new(15, 15), Vector2.new(9, 15), Vector2.new(15, 9)}) do
         local dot = Instance.new("Frame")
         dot.Parent = handle
@@ -415,7 +400,6 @@ do
     end))
 end
 
--- Pitch black fading into a faint blood-red haze at the bottom.
 local mainGradient = Instance.new("UIGradient")
 mainGradient.Rotation = 90
 mainGradient.Color = ColorSequence.new(Color3.fromRGB(0, 0, 0), Color3.fromRGB(26, 2, 6))
@@ -428,7 +412,6 @@ topAccent.BackgroundColor3 = C.accent
 topAccent.BorderSizePixel = 0
 topAccent.ZIndex = 4
 
--- Header ---------------------------------------------------------------
 local header = Instance.new("Frame")
 header.Parent = main
 header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -457,7 +440,6 @@ logo.BackgroundColor3 = C.bg
 logo.BorderSizePixel = 0
 logo.ZIndex = 4
 stroke(logo, C.accent, 0, 1)
--- Emblem built from frames (no font glyph needed): a diamond "ICE eye" with a pulsing core.
 local logoRing = Instance.new("Frame")
 logoRing.Parent = logo
 logoRing.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -511,7 +493,6 @@ subtitle.TextSize = 9
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
 subtitle.ZIndex = 5
 
--- Hazard stripes + blinking link status (top right of the header).
 local stripes = Instance.new("TextLabel")
 stripes.Parent = header
 stripes.BackgroundTransparency = 1
@@ -538,7 +519,6 @@ linkStatus.TextSize = 9
 linkStatus.TextXAlignment = Enum.TextXAlignment.Right
 linkStatus.ZIndex = 5
 
--- Corner brackets
 local function addBracket(parent, ax, ay)
     for _, size in ipairs({Vector2.new(14, 2), Vector2.new(2, 14)}) do
         local f = Instance.new("Frame")
@@ -556,7 +536,6 @@ addBracket(main, 1, 0)
 addBracket(main, 0, 1)
 addBracket(main, 1, 1)
 
--- Slow red scanline sweeping down the panel (does not block input).
 local scanline = Instance.new("Frame")
 scanline.Name = "Scanline"
 scanline.Parent = main
@@ -573,7 +552,6 @@ TweenService:Create(
     {Position = UDim2.new(0, 0, 1, 0)}
 ):Play()
 
--- Occasional title glitch + blinking link light.
 task.spawn(function()
     local basePos = title.Position
     while not terminated and title.Parent do
@@ -600,7 +578,6 @@ task.spawn(function()
     end
 end)
 
--- Footer: operator name, FPS and ping --------------------------------------
 local footer = Instance.new("Frame")
 footer.Parent = main
 footer.AnchorPoint = Vector2.new(0, 1)
@@ -621,7 +598,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: PHOTO-TAB-2"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: PROJECTILE"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -659,7 +636,6 @@ task.spawn(function()
     hb:Disconnect()
 end)
 
--- Category tabs: horizontally scrollable so every category remains reachable.
 local tabBar = Instance.new("ScrollingFrame")
 tabBar.Name = "CategoryTabs"
 tabBar.Parent = main
@@ -690,15 +666,12 @@ tabDivider.BackgroundTransparency = 0.35
 tabDivider.BorderSizePixel = 0
 tabDivider.ZIndex = 8
 
--- Only the title/header strip and the footer can drag the menu.
--- Content controls (including the 3D avatar viewport) never initiate window dragging.
 local menuDragging = false
 local menuDragStart = nil
 local menuStartPosition = nil
 local function beginMenuDrag(input)
     if input.UserInputType ~= Enum.UserInputType.MouseButton1
         and input.UserInputType ~= Enum.UserInputType.Touch then return end
-    -- The resize handle sits on top of the footer: grabbing it must not also move the window.
     local handle = ESPX.resizeHandle
     if handle then
         local p, pos, size = input.Position, handle.AbsolutePosition, handle.AbsoluteSize
@@ -789,7 +762,6 @@ for order, name in ipairs({"Main", "Visual", "Shader", "Photo", "Movement", "Ove
     button.ZIndex = 9
     stroke(button, C.outline, 0.4, 1)
 
-    -- Bottom indicator bar for the active tab.
     local indicator = Instance.new("Frame")
     indicator.Name = "Indicator"
     indicator.Parent = button
@@ -814,7 +786,6 @@ for order, name in ipairs({"Main", "Visual", "Shader", "Photo", "Movement", "Ove
 end
 setTab("Main")
 
--- Section header: red notch, "// TITLE", and a rule with a bright leading segment.
 local function createSection(name)
     local clean = (string.gsub(string.gsub(name, "^%[%s*", ""), "%s*%]$", ""))
     local wrap = Instance.new("Frame")
@@ -906,7 +877,6 @@ local function createActionButton(name, callback)
     return b
 end
 
--- Toggle: status bar on the left, [ ON ] / [ OFF ] readout on the right.
 local function createToggle(name, key)
     local b = Instance.new("TextButton")
     b.Parent = scroll
@@ -983,7 +953,6 @@ local function createToggle(name, key)
     b.MouseButton1Click:Connect(flip)
 end
 
--- Slider: thin rail, red fill, diamond thumb and tick marks. Click anywhere on the rail or drag.
 local function createSlider(name, minV, maxV, def, cb, key, step)
     local container = Instance.new("Frame")
     container.Parent = scroll
@@ -1026,7 +995,6 @@ local function createSlider(name, minV, maxV, def, cb, key, step)
     valueBox.ZIndex = 8
     stroke(valueBox, C.outline, 0.2, 1)
 
-    -- Transparent hit area so the rail is easy to click.
     local back = Instance.new("TextButton")
     back.Parent = container
     back.AutoButtonColor = false
@@ -1054,7 +1022,6 @@ local function createSlider(name, minV, maxV, def, cb, key, step)
     fill.BorderSizePixel = 0
     fill.ZIndex = 8
 
-    -- Tick marks every 10%.
     local ticks = Instance.new("Frame")
     ticks.Parent = container
     ticks.BackgroundTransparency = 1
@@ -1090,7 +1057,7 @@ local function createSlider(name, minV, maxV, def, cb, key, step)
         local val = minV + (maxV - minV) * pos
         val = math.floor(val * 100 + 0.5) / 100
         if maxV - minV >= 10 and not step then val = math.floor(val + 0.5) end
-        if step then -- e.g. 0.5 for fine focus control
+        if step then
             val = math.floor(val / step + 0.5) * step
             val = math.floor(val * 1000 + 0.5) / 1000
         end
@@ -1104,7 +1071,7 @@ local function createSlider(name, minV, maxV, def, cb, key, step)
     if key then
         ESPX.sliders[#ESPX.sliders + 1] = {
             key = key,
-            set = function(val) -- used by Reset to Defaults (does not write the settings file)
+            set = function(val)
                 local ratio = math.clamp((val - minV) / (maxV - minV), 0, 1)
                 fill.Size = UDim2.new(ratio, 0, 1, 0)
                 thumb.Position = UDim2.new(ratio, 0, 0.5, 0)
@@ -1135,7 +1102,6 @@ local function createSlider(name, minV, maxV, def, cb, key, step)
     end))
 end
 
--- Main: ESP, targeting, and other visual/utility controls.
 setTab("Main")
 createSection("[ UTILITY ]")
 createToggle("Aim Assist", "AimAssist")
@@ -1158,7 +1124,6 @@ createSection("[ GUN ]")
 createToggle("Gun FOV", "GunFOV")
 createSlider("Gun FOV Value", 30, 120, cfg.gunFov, function(v) cfg.gunFov = v end, "gunFov")
 
--- Visual: every ESP / overlay / on-screen display option lives here.
 setTab("Visual")
 createSection("[ VISUALS ]")
 createToggle("NPC ESP", "ESP")
@@ -1171,6 +1136,14 @@ createToggle("Head Arrow", "HeadArrow")
 createSection("[ VIEW LINE ]")
 createToggle("View Line", "ViewLine")
 createSlider("View Line Length", 10, 300, cfg.viewLineLength, function(v) cfg.viewLineLength = v end, "viewLineLength")
+createSection("[ PROJECTILE PREVIEW ]")
+createToggle("Projectile Preview", "ProjectilePreview")
+createSlider("Projectile Speed", 20, 500, cfg.projSpeed, function(v) cfg.projSpeed = v end, "projSpeed")
+createSlider("Projectile Gravity", 0, 2, cfg.projGravity, function(v) cfg.projGravity = v end, "projGravity")
+createSlider("Projectile Range", 50, 1000, cfg.projRange, function(v) cfg.projRange = v end, "projRange")
+createSlider("Projectile Pitch (+/-)", -20, 20, cfg.projPitch, function(v) cfg.projPitch = v end, "projPitch", 0.5)
+createSlider("Projectile Start Height", 0, 5, cfg.projHeight, function(v) cfg.projHeight = v end, "projHeight")
+createSlider("Projectile Start Forward", 0, 6, cfg.projForward, function(v) cfg.projForward = v end, "projForward")
 createSection("[ WORLD ]")
 createToggle("Fullbright", "Fullbright")
 createToggle("No Fog", "NoFog")
@@ -1195,7 +1168,6 @@ createSlider("Fill Opacity", 0, 1, cfg.genFillOpacity, function(v) cfg.genFillOp
 createSlider("Outline Opacity", 0, 1, cfg.genOutlineOpacity, function(v) cfg.genOutlineOpacity = v end, "genOutlineOpacity")
 createSlider("Color Hue", 0, 360, cfg.genHue, function(v) cfg.genHue = v end, "genHue")
 
--- Movement: movement toggles and speed controls.
 setTab("Movement")
 createSection("[ MOVEMENT ]")
 createToggle("Noclip", "Noclip")
@@ -1206,13 +1178,11 @@ createSection("[ MOVEMENT SETTINGS ]")
 createSlider("Walk Speed", 1, 100, cfg.speed, function(v) cfg.speed = v end, "speed")
 createSlider("Fly Speed", 1, 200, 55, function(v) flySpeed = v end, "flySpeed")
 
--- Overwatch uses one shared player list for teleporting, spectating, and player info.
 setTab("Overwatch")
 
 local selectedSpectatePlayer = nil
 local updateSpectateInfo
 
--- The same list below drives both teleport and spectate actions.
 createSection("[ PLAYER LIST ]")
 
 local spectateTargetPlayer = nil
@@ -1304,8 +1274,6 @@ local function startSpectating(player)
     local camera = ws.CurrentCamera
     if not camera then error("Camera is unavailable") end
 
-    -- Start behind the target. Hold RMB and move the mouse to orbit around them.
-    -- Scriptable camera bypasses Roblox's default camera collision pushback (wall noclip).
     local initialPosition = (root.CFrame * CFrame.new(0, spectateOrbitHeight, spectateOrbitDistance)).Position
     local focusPosition = root.Position + Vector3.new(0, 2, 0)
     local initialCFrame = CFrame.lookAt(initialPosition, focusPosition)
@@ -1328,8 +1296,6 @@ local function startSpectating(player)
         end
     end)
     spectateMouseDeltaConnection = uis.InputChanged:Connect(function(input, gameProcessed)
-        -- MouseWheel input can be marked processed by Roblox UI, so handle it before
-        -- the RMB-only rotation check. Zoom remains available while spectating.
         if input.UserInputType == Enum.UserInputType.MouseWheel then
             if spectateMouseLook then
                 local wheelDelta = input.Position.Z
@@ -1361,7 +1327,6 @@ local function startSpectating(player)
         end
 
         currentCamera.CameraType = Enum.CameraType.Scriptable
-        -- Orbit position stays a fixed distance from the target; mouse input only changes view angle.
         local rotation = CFrame.fromOrientation(spectatePitch, spectateYaw, 0)
         local focus = targetRoot.Position + Vector3.new(0, 2, 0)
         local orbitOffset = -rotation.LookVector * spectateOrbitDistance + Vector3.new(0, spectateOrbitHeight - 2, 0)
@@ -1371,9 +1336,6 @@ end
 
 local updateSpectateInfo
 
--- First person spectate ("head cam"): the camera is glued to the target's head, so it turns and leans exactly
--- like their head does, like a GoPro on a helmet. The head and the accessories on it are hidden on your screen
--- only (LocalTransparencyModifier), so nothing blocks the view. Own block to save local slots.
 do
     local function setLocalHidden(state, item)
         local ok, original = pcall(function() return item.LocalTransparencyModifier end)
@@ -1382,8 +1344,6 @@ do
         if original ~= 1 then pcall(function() item.LocalTransparencyModifier = 1 end) end
     end
 
-    -- Hides the head (and its face decal) plus every accessory worn on the head. Runs every frame, so hats that
-    -- load late or change are caught too.
     local function hideHeadParts(state, character, head)
         setLocalHidden(state, head)
         for _, child in ipairs(head:GetChildren()) do
@@ -1441,12 +1401,11 @@ do
         local camera = ws.CurrentCamera
         if not camera then error("Camera is unavailable") end
 
-        stopSpectating() -- also ends a previous head cam or orbit spectate
-        spectateTargetPlayer = player -- tells Freecam and the respawn handler that a spectate is running
+        stopSpectating()
+        spectateTargetPlayer = player
         local state = {
             player = player, character = nil, hidden = {}, cframe = nil,
             originalFov = camera.FieldOfView,
-            -- values used by the motion layer
             lastYaw = nil, lastPos = nil, rate = 0, speed = 0, phase = 0,
         }
         ESPX.headCam = state
@@ -1463,7 +1422,7 @@ do
                 return
             end
             if state.character ~= targetCharacter then
-                restoreHidden(state) -- the target respawned: forget the old character
+                restoreHidden(state)
                 state.character = targetCharacter
                 state.cframe = nil
                 state.lastYaw, state.lastPos, state.rate, state.speed = nil, nil, 0, 0
@@ -1472,22 +1431,13 @@ do
 
             currentCamera.CameraType = Enum.CameraType.Scriptable
             currentCamera.FieldOfView = cfg.headCamFov
-            -- Eye position: a little above the middle of the head and in front of the face.
             local wanted = targetHead.CFrame * CFrame.new(0, 0.15, -cfg.headCamOffset)
-            -- Optional smoothing (like a stabilised action cam): 0 = locked to the head.
             local smooth = math.clamp(cfg.headCamSmooth, 0, 0.95)
             if state.cframe and smooth > 0 then
                 wanted = state.cframe:Lerp(wanted, 1 - smooth ^ (dt * 60))
             end
             state.cframe = wanted
 
-            -- Motion layer ("Head Cam Motion"). Most games never turn a player's head separately from the body,
-            -- so a camera fixed to the head would look frozen. This adds what a real head cam would show, using
-            -- only what can be seen of the player: how fast their body turns and how fast they walk.
-            --   look-ahead : the view leads into a turn instead of being glued to the body
-            --   lean       : the view banks a little into the turn
-            --   walk bob   : up/down bounce, side sway and a small nod, scaled by walking speed
-            --   breathing  : a very slow idle drift
             local motion = cfg.headCamMotion
             local final = wanted
             local root = targetCharacter:FindFirstChild("HumanoidRootPart")
@@ -1623,7 +1573,6 @@ createSlider("Head Cam Forward", 0, 2, cfg.headCamOffset, function(v) cfg.headCa
 createSlider("Head Cam Smoothing", 0, 0.95, cfg.headCamSmooth, function(v) cfg.headCamSmooth = v end, "headCamSmooth", 0.05)
 createSlider("Head Cam Motion", 0, 2, cfg.headCamMotion, function(v) cfg.headCamMotion = v end, "headCamMotion", 0.05)
 
--- Selected-player information card, displayed directly below Stop Spectating.
 local spectateInfoCard = Instance.new("Frame")
 spectateInfoCard.Name = "SelectedPlayerInfo"
 spectateInfoCard.Parent = scroll
@@ -1674,9 +1623,7 @@ spectateInfoText.TextXAlignment = Enum.TextXAlignment.Left
 spectateInfoText.TextYAlignment = Enum.TextYAlignment.Top
 spectateInfoText.ZIndex = 8
 
--- Interactive 3D preview of the currently selected player's avatar.
 createSection("[ 3D AVATAR PREVIEW ]")
--- Wrapper lets the zoom controls render as normal 2D UI above the 3D viewport.
 local avatarPreviewContainer = Instance.new("Frame")
 avatarPreviewContainer.Name = "AvatarPreviewContainer"
 avatarPreviewContainer.Parent = scroll
@@ -1715,10 +1662,8 @@ local avatarPreviewDragging = false
 local avatarPreviewLastX = 0
 local avatarPreviewLastY = 0
 local avatarPreviewConnections = {}
--- Pan offset of the preview (in studs, along the camera's right / up) and the drag mode. Kept in a table to save locals.
 ESPX.avatarPan = {x = 0, y = 0, panning = false, moveMode = false}
 
--- Embedded zoom slider: mouse-wheel input is left alone for menu scrolling.
 local avatarZoomMin, avatarZoomMax = 2.5, 20
 local avatarZoomDragging = false
 
@@ -1808,8 +1753,6 @@ local function updateAvatarPreviewCamera()
     if not avatarPreviewModel then return end
     local boxCFrame, boxSize = avatarPreviewModel:GetBoundingBox()
     local focus = boxCFrame.Position + Vector3.new(0, boxSize.Y * 0.05, 0)
-    -- Full orbit: yaw travels continuously through 360 degrees; pitch allows
-    -- looking above and below the avatar without flipping the camera upside down.
     local rotation = CFrame.fromOrientation(avatarPreviewPitch, avatarPreviewYaw, 0)
     local pan = ESPX.avatarPan
     focus = focus + rotation.RightVector * pan.x + rotation.UpVector * pan.y
@@ -1825,7 +1768,6 @@ local function setAvatarZoomFromX(x)
     updateAvatarPreviewCamera()
 end
 
--- Puts a ready model into the 3D preview (used for the current avatar and for saved avatars).
 function ESPX.placePreviewModel(clone)
     clone.Name = "AvatarPreview"
     for _, descendant in ipairs(clone:GetDescendants()) do
@@ -1878,7 +1820,6 @@ local function showAvatarPreview(player)
     ESPX.placePreviewModel(clone)
 end
 
--- Shows a model that was built from a saved outfit instead of the player's current character.
 function ESPX.showOutfitModel(model, label)
     clearAvatarPreview()
     avatarPreviewYaw = math.rad(180)
@@ -1890,7 +1831,6 @@ function ESPX.showOutfitModel(model, label)
     ESPX.placePreviewModel(model)
 end
 
--- The embedded slider is the only zoom control; mouse-wheel events are deliberately ignored here.
 avatarZoomTrack.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
@@ -1899,7 +1839,6 @@ avatarZoomTrack.InputBegan:Connect(function(input)
     end
 end)
 
--- Left drag orbits, right drag (or left drag in MOVE mode, or Shift + left drag) moves the avatar around.
 spectateViewport.InputBegan:Connect(function(input)
     local isLeft = input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch
@@ -1939,7 +1878,6 @@ table.insert(avatarPreviewConnections, ESPX.track(uis.InputChanged:Connect(funct
         avatarPreviewLastY = p.Y
         local pan = ESPX.avatarPan
         if pan.panning then
-            -- World units per screen pixel at the current zoom, so the avatar follows the cursor.
             local height = math.max(1, spectateViewport.AbsoluteSize.Y)
             local perPixel = avatarPreviewDistance * 2 * math.tan(math.rad(avatarViewportCamera.FieldOfView) / 2) / height
             pan.x = math.clamp(pan.x - deltaX * perPixel, -25, 25)
@@ -1952,7 +1890,6 @@ table.insert(avatarPreviewConnections, ESPX.track(uis.InputChanged:Connect(funct
     end
 end)))
 
--- Buttons on top of the 3D preview: RESET VIEW (recenters the avatar), MODE (rotate / move) and a label.
 do
     local function previewButton(text, xOffset)
         local button = Instance.new("TextButton")
@@ -1992,7 +1929,6 @@ do
         viewLabel.Text = "VIEWING: " .. string.upper(tostring(text))
     end
 
-    -- True when a click lands on the zoom bar or one of these buttons (so it must not start a drag).
     ESPX.isOverAvatarControl = function(p)
         for _, object in ipairs({avatarZoomPanel, resetButton, modeButton}) do
             local pos, size = object.AbsolutePosition, object.AbsoluteSize
@@ -2003,7 +1939,6 @@ do
         return false
     end
 
-    -- Back to the default angle, zoom and position, so a lost avatar can always be brought back.
     ESPX.resetAvatarView = function()
         avatarPreviewYaw = math.rad(180)
         avatarPreviewPitch = math.rad(-5)
@@ -2057,7 +1992,6 @@ spectateCopyButton.MouseButton1Click:Connect(function()
         .. "\nDisplay Name: " .. player.DisplayName
         .. "\nUser ID: " .. tostring(player.UserId)
 
-    -- Clipboard functions are provided by some script executors, not standard Roblox Lua.
     local copyFn = setclipboard or toclipboard
     if type(copyFn) == "function" then
         local ok = pcall(copyFn, info)
@@ -2092,16 +2026,12 @@ updateSpectateInfo = function(player)
             )
             return content
         end)
-        -- Do not let a delayed thumbnail overwrite the newly selected player's avatar.
         if ok and selectedSpectatePlayer == player and player.Parent == plrs then
             spectateAvatar.Image = imageUrl
         end
     end)
 end
 
--- Asks Roblox's avatar service for one page of a user's saved outfits. Tries the current (v2) endpoint on
--- roblox.com first, then the same endpoint on a public mirror. If neither gives a usable answer, the error
--- includes the start of what each one said, so it is clear what went wrong.
 function ESPX.fetchOutfitPage(userId, cursor)
     local suffix = cursor and ("&paginationToken=" .. cursor) or ""
     local candidates = {
@@ -2112,7 +2042,7 @@ function ESPX.fetchOutfitPage(userId, cursor)
     for _, url in ipairs(candidates) do
         local okGet, body, status = pcall(ESPX.httpGet, url)
         if okGet and (status == 429 or string.find(string.lower(tostring(body)), "too many requests", 1, true)) then
-            task.wait(2.5) -- rate limited: wait a moment and ask once more
+            task.wait(2.5)
             okGet, body, status = pcall(ESPX.httpGet, url)
         end
         if okGet then
@@ -2126,8 +2056,6 @@ function ESPX.fetchOutfitPage(userId, cursor)
     error("the avatar service said: " .. table.concat(problems, "  |  "))
 end
 
--- Saved avatars: lists the selected player's saved outfits (the Avatar Editor "costumes") as thumbnails.
--- Click one to inspect it in the 3D preview above. Needs an executor with an HTTP request function.
 do
     createSection("[ SAVED AVATARS ]")
     local statusLabel = Instance.new("TextLabel")
@@ -2172,10 +2100,9 @@ do
     gridPadding.PaddingLeft = UDim.new(0, 6)
     gridPadding.PaddingBottom = UDim.new(0, 6)
 
-    local loadToken = 0 -- bumped on every load / clear, so a slow answer for an old player is ignored
-    local outfitCache = {} -- [userId] = {time, outfits}: pressing Load again does not ask Roblox again for 3 minutes
+    local loadToken = 0
+    local outfitCache = {}
 
-    -- Shows a problem in the status line, prints it, and copies it so it can be pasted somewhere.
     local function showError(text)
         statusLabel.Text = text
         print("[BLACKWALL] " .. text)
@@ -2250,7 +2177,7 @@ do
             local outfits = {}
             local ok, err = pcall(function()
                 local cursor = nil
-                for _ = 1, 6 do -- up to 6 pages of 50 outfits
+                for _ = 1, 6 do
                     local data = ESPX.fetchOutfitPage(player.UserId, cursor)
                     for _, item in ipairs(data.data) do
                         if item.id then outfits[#outfits + 1] = {id = item.id, name = tostring(item.name or item.id)} end
@@ -2309,15 +2236,11 @@ ESPX.track(plrs.PlayerRemoving:Connect(function(player)
     refreshSpectatePlayers()
 end))
 ESPX.track(lplr.CharacterAdded:Connect(function()
-    -- Keep the camera local after respawning if the spectate target vanished.
     if not spectateTargetPlayer then
         task.defer(stopSpectating)
     end
 end))
 
--- Gun tab and its obsolete weapon features have been removed.
-
--- Photo: everything for taking screenshots and cinematic shots (free camera, FOV, hiding the interface, depth of field).
 setTab("Photo")
 createSection("[ FREECAM ]")
 createToggle("Freecam", "Freecam")
@@ -2331,7 +2254,6 @@ createActionButton("Teleport to Freecam Position", function()
     local character = lplr.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if not root then error("Your character is unavailable") end
-    -- Keep your current facing, move to where the camera is, and drop any leftover momentum.
     root.CFrame = CFrame.new(target) * (root.CFrame - root.CFrame.Position)
     root.AssemblyLinearVelocity = Vector3.zero
 end)
@@ -2370,8 +2292,6 @@ createSlider("DoF Focus Distance", 0, 100, cfg.dofFocusDistance, function(v) cfg
 createSlider("DoF Focus Radius", 0, 50, cfg.dofFocusRadius, function(v) cfg.dofFocusRadius = v end, "dofFocusRadius", 0.5)
 createSlider("DoF Layers", 1, 3, cfg.dofLayers, function(v) cfg.dofLayers = v end, "dofLayers", 1)
 
--- Shader: reshade-style color grading, bloom, lighting, shadows and a vignette.
--- Everything is neutral by default, so turning Reshade on changes nothing until you move a slider or pick a preset.
 setTab("Shader")
 createSection("[ RESHADE ]")
 createToggle("Reshade", "Reshade")
@@ -2410,16 +2330,12 @@ createSection("[ SCREEN ]")
 createToggle("Vignette", "RsVignette")
 createSlider("Vignette Strength", 0, 1, cfg.rsVignette, function(v) cfg.rsVignette = v end, "rsVignette")
 
--- Fun: just-for-fun character toys.
 setTab("Fun")
 createSection("[ FUN ]")
 createToggle("Ragdoll", "Ragdoll")
 createToggle("Sit", "Sit")
 
--- Settings: menu keybind and performance controls.
 setTab("Settings")
--- UI-only keybind selector for showing/hiding this menu.
--- Persist the selected key using executor file APIs when available.
 local menuKeyFile = "HRSH_MenuToggleKey.txt"
 local function loadMenuToggleKey()
     if type(isfile) == "function" and type(readfile) == "function" then
@@ -2509,7 +2425,6 @@ createToggle("Instance Optimizer", "InstanceOptimizer")
 createToggle("Particle Cap", "ParticleCap")
 createToggle("Ultra Potato", "UltraPotato")
 
--- Config: put every toggle and slider back to its built-in default (keybinds are left alone).
 function ESPX.resetToDefaults()
     for key, value in pairs(ESPX.defaultCfg) do cfg[key] = value end
     for _, entry in ipairs(ESPX.toggleList) do
@@ -2535,7 +2450,6 @@ end
 
 createSection("[ CONFIG ]")
 createActionButton("Reset to Defaults", function()
-    -- Two clicks within 3 seconds, so a stray click cannot wipe your settings.
     if os.clock() - (ESPX.resetArmedAt or -10) > 3 then
         ESPX.resetArmedAt = os.clock()
         return "[CLICK AGAIN]"
@@ -2545,7 +2459,6 @@ createActionButton("Reset to Defaults", function()
     return "[RESET]"
 end)
 
--- Server tools. The server list needs an executor HTTP function (request / http_request / HttpGet).
 function ESPX.httpGet(url)
     local requestFn = (type(request) == "function" and request)
         or (type(http_request) == "function" and http_request)
@@ -2562,7 +2475,7 @@ end
 function ESPX.rejoin()
     local teleportService = game:GetService("TeleportService")
     if #plrs:GetPlayers() <= 1 then
-        teleportService:Teleport(game.PlaceId, lplr) -- alone in the server: a new one is created
+        teleportService:Teleport(game.PlaceId, lplr)
     else
         teleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, lplr)
     end
@@ -2586,11 +2499,10 @@ createSection("[ SERVER ]")
 createActionButton("Rejoin Server", function() ESPX.rejoin() end)
 createActionButton("Server Hop", function() ESPX.serverHop() end)
 
--- Per-feature keybinds: any toggle in the menu can be bound to a key (saved in HRSH_MenuBinds.json).
 do
     local bindsFile = "HRSH_MenuBinds.json"
-    local keyButtons = {} -- [toggleKey] = TextButton showing the bound key
-    ESPX.binds = {}       -- [toggleKey] = KeyCode name
+    local keyButtons = {}
+    ESPX.binds = {}
     ESPX.bindWaiting = nil
 
     local function showBind(key)
@@ -2700,7 +2612,6 @@ do
     ESPX.track(uis.InputBegan:Connect(function(input, gpe)
         if terminated or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 
-        -- Capturing a new bind.
         local waiting = ESPX.bindWaiting
         if waiting then
             ESPX.bindWaiting = nil
@@ -2720,7 +2631,6 @@ do
             return
         end
 
-        -- Using a bind (ignored while typing in chat or choosing the menu key).
         if gpe or waitingForMenuKey then return end
         for key, keyName in pairs(ESPX.binds) do
             if input.KeyCode.Name == keyName then
@@ -2759,7 +2669,6 @@ ESPX.track(uis.InputBegan:Connect(function(input, gpe)
     end
 end))
 
--- Speed modifier
 local lastSpeed = false
 
 ESPX.track(uis.InputBegan:Connect(function(input, gpe)
@@ -2799,7 +2708,6 @@ ESPX.track(rs.Heartbeat:Connect(function()
     end
 end))
 
--- Instant Interact
 local validTargets = {}
 
 ESPX.track(pps.PromptShown:Connect(function(prompt)
@@ -2808,7 +2716,6 @@ ESPX.track(pps.PromptShown:Connect(function(prompt)
     end
 end))
 
--- NPC ESP
 local function applyEsp(model)
     if not toggles.ESP then return end
     local hl = model:FindFirstChild("NPCHighlight")
@@ -2824,7 +2731,6 @@ local function applyEsp(model)
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 end
 
--- Enemy HP ESP
 local function addEnemyHPESP(model)
     if not toggles.EnemyHP then return end
     local hum = model:FindFirstChildOfClass("Humanoid")
@@ -2886,10 +2792,7 @@ local function updateEnemyHPESP()
     end
 end
 
-
--- Player ESP
 local function getPlayerESPAnchor(char)
-    -- R6/R15 and streamed/custom rigs may not have every standard part yet.
     for _, name in ipairs({"Head", "HumanoidRootPart", "UpperTorso", "Torso", "PrimaryPart"}) do
         local part = name == "PrimaryPart" and char.PrimaryPart or char:FindFirstChild(name)
         if part and part:IsA("BasePart") then
@@ -2919,7 +2822,6 @@ local function addPlayerInfoESP(plr, char)
 
     local hum = char:FindFirstChildOfClass("Humanoid")
     local anchor = getPlayerESPAnchor(char)
-    -- Keep the highlight even while character parts are streaming in; retry next refresh.
     if not anchor or not hum then return end
 
     local infoGui = char:FindFirstChild("PlayerInfoESP", true)
@@ -2945,7 +2847,6 @@ local function addPlayerInfoESP(plr, char)
         label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
         label.Parent = infoGui
     end
-    -- Reparent if Head was streamed out or the rig uses a different anchor.
     if infoGui.Parent ~= anchor then infoGui.Parent = anchor end
 
     local label = infoGui:FindFirstChild("Info")
@@ -3005,7 +2906,6 @@ ESPX.track(rs.Heartbeat:Connect(function(dt)
         applyPlayerESP(toggles.PlayerESP)
     end
 
-    -- Refresh at 10 Hz rather than every frame. This also retries when parts stream in.
     if toggles.PlayerESP then
         playerESPUpdateTimer += dt
         if playerESPUpdateTimer >= 0.1 then
@@ -3036,7 +2936,6 @@ ESPX.track(rs.Heartbeat:Connect(function(dt)
     end
 end))
 
--- My HP display
 local selfHPGui
 local selfHPLabel
 local selfHPConnection
@@ -3119,7 +3018,6 @@ local function setupSelfHP()
     selfHPConnection = hum.HealthChanged:Connect(update)
 end
 
--- Recreate the display after respawn if the toggle remains enabled.
 ESPX.track(lplr.CharacterAdded:Connect(function()
     if toggles.SelfHP then
         task.wait(0.25)
@@ -3127,7 +3025,6 @@ ESPX.track(lplr.CharacterAdded:Connect(function()
     end
 end))
 
--- Watch the toggle without touching the existing GUI/event structure.
 task.spawn(function()
     local last = toggles.SelfHP
 
@@ -3141,7 +3038,6 @@ task.spawn(function()
     end
 end)
 
--- Item ESP
 local itemESPObjects = {}
 
 local function getItemAdornee(obj)
@@ -3163,17 +3059,14 @@ local function isPickupCandidate(obj)
         return false
     end
 
-    -- Never treat player characters as pickups.
     if plrs:GetPlayerFromCharacter(obj) then
         return false
     end
 
-    -- This is the marker visible in the game's pickup hierarchy.
     if obj:FindFirstChild("Put Item In ServerStore", true) then
         return true
     end
 
-    -- Fallback: anything directly under Workspace containing a prompt.
     if obj:FindFirstChildWhichIsA("ProximityPrompt", true) then
         return true
     end
@@ -3210,8 +3103,6 @@ local function addItemESP(obj)
     gui.Size = UDim2.new(0, 220, 0, 28)
     gui.StudsOffset = Vector3.new(0, 2.5, 0)
 
-    -- Do not use ProximityPrompt.Enabled or PromptShown.
-    -- The ESP exists independently of prompt activation range.
     gui.AlwaysOnTop = true
     gui.MaxDistance = 2000
     gui.Adornee = adornee
@@ -3227,7 +3118,6 @@ local function addItemESP(obj)
     label.TextStrokeTransparency = 0
     label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 
-    -- Only the item name. No GUN/MISC/GRENADE category.
     label.Text = obj.Name
     label.Parent = gui
     ESPX.styleText(label, gui)
@@ -3245,7 +3135,6 @@ local function removeItemESP(obj)
 end
 
 local function clearItemESP()
-    -- Clear the ESPs tracked by this script.
     for obj, gui in pairs(itemESPObjects) do
         if gui then
             gui:Destroy()
@@ -3254,8 +3143,6 @@ local function clearItemESP()
         itemESPObjects[obj] = nil
     end
 
-    -- Also remove stale ItemESP billboards left behind by an older
-    -- execution of the script. This fixes ESP remaining after OFF.
     for _, gui in ipairs(cg:GetDescendants()) do
         if gui:IsA("BillboardGui") and gui.Name == "ItemESP" then
             gui:Destroy()
@@ -3271,10 +3158,6 @@ local function updateItemESP()
 
     local seen = {}
 
-    -- IMPORTANT:
-    -- The pickup objects you showed are direct children of Workspace.
-    -- We inspect those objects directly instead of waiting for
-    -- ProximityPromptService.PromptShown.
     for _, obj in ipairs(ws:GetChildren()) do
         if isPickupCandidate(obj) then
             seen[obj] = true
@@ -3282,7 +3165,6 @@ local function updateItemESP()
         end
     end
 
-    -- Remove ESP for pickups that were moved/removed.
     for obj in pairs(itemESPObjects) do
         if not seen[obj] or not obj:IsDescendantOf(ws) then
             removeItemESP(obj)
@@ -3290,7 +3172,6 @@ local function updateItemESP()
     end
 end
 
--- Noclip
 local noclipOriginal = {}
 local lastNoclip = false
 
@@ -3302,7 +3183,6 @@ local function setNoclip(enabled)
     end
 
     if enabled then
-        -- Rebuild the cached part list on respawn and once a second (picks up new accessories/tools).
         if ESPX.noclipChar ~= char or os.clock() - ESPX.noclipBuilt > 1 then
             ESPX.noclipChar = char
             ESPX.noclipBuilt = os.clock()
@@ -3341,15 +3221,12 @@ ESPX.track(lplr.CharacterAdded:Connect(function()
     end
 end))
 
--- Keep collision disabled while Noclip is enabled.
 ESPX.track(rs.Stepped:Connect(function()
     if toggles.Noclip then
         setNoclip(true)
     end
 end))
 
--- Fly toggle (WASD to move, Space to rise, LeftCtrl to descend).
--- Kept separate from the existing feature implementations.
 local flyVelocity = nil
 local flyGyro = nil
 local flyRoot = nil
@@ -3404,7 +3281,7 @@ local function startFly()
         if uis:IsKeyDown(Enum.KeyCode.A) then direction -= right end
         if uis:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.yAxis end
         if uis:IsKeyDown(Enum.KeyCode.LeftControl) then direction -= Vector3.yAxis end
-        if toggles.Freecam then direction = Vector3.zero end -- WASD belongs to Freecam while it is on
+        if toggles.Freecam then direction = Vector3.zero end
         if direction.Magnitude > 0 then direction = direction.Unit * flySpeed end
         flyVelocity.Velocity = direction
         flyGyro.CFrame = CFrame.lookAt(flyRoot.Position, flyRoot.Position + camera.CFrame.LookVector)
@@ -3429,12 +3306,7 @@ ESPX.track(lplr.CharacterAdded:Connect(function()
     if toggles.Fly then startFly() end
 end))
 
--- Item scanner
--- Runs after the Item ESP functions have been declared.
--- It scans direct Workspace children, so ProximityPrompt activation range
--- does not control whether an item is detected.
 task.spawn(function()
-    -- Starts true so stale labels from an older run are cleaned once at startup.
     local wasOn = true
     while not terminated do
         if toggles.ItemESP then
@@ -3442,7 +3314,7 @@ task.spawn(function()
             updateItemESP()
         elseif wasOn then
             wasOn = false
-            clearItemESP() -- one cleanup when switched off, instead of scanning CoreGui forever
+            clearItemESP()
         end
 
         task.wait(0.15)
@@ -3463,8 +3335,6 @@ ESPX.track(ws.ChildRemoved:Connect(function(obj)
     removeItemESP(obj)
 end))
 
--- Crosshair
--- A filled dot with a thin black ring so it stays visible on bright backgrounds.
 local crossDot = Drawing.new("Circle")
 local crossOutline = Drawing.new("Circle")
 crossDot.Filled = true
@@ -3524,7 +3394,6 @@ local function refreshTargets()
                 if old then old:Destroy() end
             end
         elseif isNonHumanTarget then
-            -- MI28 can be highlighted even when the configured target part is absent.
             inRange[#inRange + 1] = {model = obj, dist = dist}
         else
             local old = obj:FindFirstChild("NPCHighlight")
@@ -3546,9 +3415,6 @@ local function refreshTargets()
     validTargets = tTargets
 end
 
--- Gather NPCs: stack eligible NPC roots at one shared point in front of the player.
--- Performance: scan Workspace infrequently, then reuse a cached list for fast movement updates.
--- Excludes Armata/MI28 and any Dummy model, including nested Dummy/DummyTwo models.
 local function hasGatherExcludedName(model)
     local name = string.lower(model.Name)
     return string.find(name, "armata", 1, true) ~= nil
@@ -3565,7 +3431,6 @@ local function isGatherExcluded(model)
         end
         node = node.Parent
     end
-    -- Skip wrappers containing excluded models so moving a parent cannot move a boss/Dummy.
     for _, descendant in ipairs(model:GetDescendants()) do
         if descendant:IsA("Model") and hasGatherExcludedName(descendant) then
             return true
@@ -3593,8 +3458,8 @@ local function isNestedInsideAnotherHumanoidModel(model)
 end
 
 local gatherCache = {}
-local GATHER_SCAN_INTERVAL = 1.0 -- Workspace scan only once per second
-local GATHER_MOVE_INTERVAL = 0.04 -- update target position about 25 times/sec for quick tracking
+local GATHER_SCAN_INTERVAL = 1.0
+local GATHER_MOVE_INTERVAL = 0.04
 
 task.spawn(function()
     local scanElapsed = GATHER_SCAN_INTERVAL
@@ -3603,7 +3468,7 @@ task.spawn(function()
         local dt = task.wait(toggles.GatherNPCs and 0.015 or 0.25)
         if not toggles.GatherNPCs then
             table.clear(gatherCache)
-            scanElapsed = GATHER_SCAN_INTERVAL -- rescan immediately when enabled again
+            scanElapsed = GATHER_SCAN_INTERVAL
             moveElapsed = 0
         else
             scanElapsed += dt
@@ -3613,7 +3478,6 @@ task.spawn(function()
             if myRoot then
                 if scanElapsed >= GATHER_SCAN_INTERVAL then
                     scanElapsed = 0
-                    -- Start from Humanoids (cheap) so the expensive exclusion checks only run on real NPCs.
                     local candidates = {}
                     local seen = {}
                     for _, hum in ipairs(ws:GetDescendants()) do
@@ -3637,8 +3501,6 @@ task.spawn(function()
 
                 if moveElapsed >= GATHER_MOVE_INTERVAL then
                     moveElapsed = 0
-                    -- One shared point in front of the player; PivotTo snaps quickly without
-                    -- repeatedly scanning Workspace or checking every descendant per update.
                     local forward = myRoot.CFrame.LookVector
                     local targetPos = myRoot.Position + forward * cfg.gatherDistance
                     local targetCFrame = CFrame.lookAt(targetPos, targetPos + forward)
@@ -3661,7 +3523,6 @@ task.spawn(function()
     end
 end)
 
--- Delete corpses loop
 task.spawn(function()
     while not terminated do
         if toggles.DelCorpses then
@@ -3678,7 +3539,6 @@ task.spawn(function()
     end
 end)
 
--- Target scan loop
 task.spawn(function()
     while not terminated do
         refreshTargets()
@@ -3686,12 +3546,10 @@ task.spawn(function()
     end
 end)
 
--- Aim assist + crosshair
 ESPX.track(rs.RenderStepped:Connect(function(dt)
     if terminated then return end
     local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 
-    -- Crosshair can now be toggled independently of Aim Assist.
     crossDot.Visible = toggles.Crosshair
     crossOutline.Visible = toggles.Crosshair
 
@@ -3724,8 +3582,6 @@ ESPX.track(rs.RenderStepped:Connect(function(dt)
 
     for _, npc in ipairs(validTargets) do
         local torso = npc:FindFirstChild(cfg.targetPart, true)
-        -- MI28 helicopter models may not have the configured humanoid target part.
-        -- Fall back to a usable model part so Aim Assist can lock onto the helicopter.
         if not torso and npc.Name:lower():find("mi28", 1, true) then
             torso = npc.PrimaryPart or npc:FindFirstChild("HumanoidRootPart", true)
                 or npc:FindFirstChildWhichIsA("BasePart", true)
@@ -3780,7 +3636,7 @@ ESPX.track(rs.RenderStepped:Connect(function(dt)
     end
 
     if bestTorso then
-        crossDot.Color = Color3.fromRGB(255, 0, 0) -- red while locked onto a target
+        crossDot.Color = Color3.fromRGB(255, 0, 0)
         local root = bestTorso.Parent and bestTorso.Parent:FindFirstChild("HumanoidRootPart")
         local vel = root and root.AssemblyLinearVelocity or Vector3.zero
         local pingComp = 0.055
@@ -3806,7 +3662,6 @@ ESPX.track(rs.RenderStepped:Connect(function(dt)
     end
 end))
 
--- Restore any NPC parts modified by an older Big Hitboxes version.
 for _, obj in ipairs(ws:GetDescendants()) do
     if obj:IsA("BasePart") and obj:GetAttribute("OrigSize") then
         pcall(function()
@@ -3822,8 +3677,6 @@ for _, obj in ipairs(ws:GetDescendants()) do
     end
 end
 
-
--- Fullbright
 ESPX.track(lighting.Changed:Connect(function()
     if not toggles.Fullbright then return end
     lighting.Brightness = 2
@@ -3834,8 +3687,6 @@ ESPX.track(lighting.Changed:Connect(function()
     lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
 end))
 
--- AI State Disabler: one pass over existing NPCs at startup, then only humanoids that get added later
--- (no more full Workspace scan every 2 seconds).
 do
     local bannedStates = {
         Enum.HumanoidStateType.Climbing,
@@ -3868,7 +3719,6 @@ do
     end))
 end
 
--- Low Visuals
 local lastLowVisuals = false
 local function applyLowVisuals(state)
     lighting.GlobalShadows = not state
@@ -3886,7 +3736,6 @@ ESPX.track(rs.Heartbeat:Connect(function()
     end
 end))
 
--- Instance Optimizer
 task.spawn(function()
     while not terminated do
         task.wait(5)
@@ -3916,7 +3765,6 @@ task.spawn(function()
     end
 end)
 
--- Particle Cap
 local cachedRates = {}
 
 local function applyParticleCap(state)
@@ -3943,7 +3791,6 @@ ESPX.track(rs.Heartbeat:Connect(function()
     end
 end))
 
--- Ultra Potato
 local cachedTextures = {}
 
 local function applyUltraPotato(state)
@@ -3970,7 +3817,6 @@ ESPX.track(rs.Heartbeat:Connect(function()
     end
 end))
 
--- F1 Deep Clean
 ESPX.track(uis.InputBegan:Connect(function(input, gpe)
     if terminated then return end
     if gpe then return end
@@ -3992,8 +3838,6 @@ ESPX.track(uis.InputBegan:Connect(function(input, gpe)
     end
 end))
 
--- World: No Fog and Custom Camera FOV.
--- Kept in its own block (not nested in the generator block) to stay under Luau's 200-locals limit.
 do
     local fogOriginal = nil
     local fogTimer = 1
@@ -4003,7 +3847,6 @@ do
         if not fogOriginal then
             fogOriginal = {fogEnd = lighting.FogEnd, fogStart = lighting.FogStart, atmos = {}}
         end
-        -- Same FogEnd Fullbright uses, so the two features never fight over it.
         if lighting.FogEnd ~= 100000 then lighting.FogEnd = 100000 end
         if lighting.FogStart ~= 99000 then lighting.FogStart = 99000 end
         for _, child in ipairs(lighting:GetChildren()) do
@@ -4038,7 +3881,6 @@ do
         end
     end
 
-    -- Re-applied a few times a second because games often reset fog on their own.
     ESPX.track(rs.Heartbeat:Connect(function(dt)
         if terminated then return end
         if toggles.NoFog then
@@ -4065,20 +3907,17 @@ do
         end
     end))
 
-    -- Used by the Terminate button.
     ESPX.restoreWorld = function()
         restoreFog()
         restoreFov()
     end
 end
 
--- Freecam: the same Scriptable-camera approach Spectate uses (the CFrame is set directly every frame),
--- so the camera never gets pushed back by walls. Own block to stay under the 200-locals limit.
 do
     local cas = game:GetService("ContextActionService")
     local SINK_ACTION = "HRSH_FreecamSink"
     local fc = {active = false, looking = false, yaw = 0, pitch = 0, pos = Vector3.zero, smoothed = nil, pending = nil}
-    local slots = {} -- saved camera positions (kept until the script is closed)
+    local slots = {}
 
     local function sinkInput()
         return Enum.ContextActionResult.Sink
@@ -4093,7 +3932,6 @@ do
         fc.pos = camera.CFrame.Position
         fc.smoothed = nil
         fc.active = true
-        -- Stop the character from walking/jumping while WASD and Space move the camera instead.
         cas:BindActionAtPriority(
             SINK_ACTION, sinkInput, false, Enum.ContextActionPriority.High.Value,
             Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D,
@@ -4118,7 +3956,6 @@ do
         end
     end
 
-    -- Hold right mouse button and move the mouse to look around (same as Spectate).
     ESPX.track(uis.InputBegan:Connect(function(input)
         if fc.active and input.UserInputType == Enum.UserInputType.MouseButton2 then
             fc.looking = true
@@ -4144,11 +3981,10 @@ do
         if not camera then return end
 
         if toggles.Freecam then
-            if spectateTargetPlayer then return end -- Spectate owns the camera while it is running
+            if spectateTargetPlayer then return end
             if not fc.active then startFreecam() end
             camera.CameraType = Enum.CameraType.Scriptable
 
-            -- A saved camera slot waiting to be applied.
             if fc.pending then
                 local slot = fc.pending
                 fc.pending = nil
@@ -4156,7 +3992,6 @@ do
                 fc.smoothed = nil
             end
 
-            -- Track Player: keep the camera pointed at the selected player (or at yourself if nobody is selected).
             if toggles.FreecamTrack then
                 local subject = selectedSpectatePlayer
                 local subjectCharacter = (subject and subject.Parent == plrs and subject.Character) or lplr.Character
@@ -4186,7 +4021,6 @@ do
                     fc.pos += move.Unit * speed * dt
                 end
             end
-            -- Roll (tilt) and optional smoothing ("floaty" camera movement).
             local target = CFrame.new(fc.pos) * rotation * CFrame.Angles(0, 0, math.rad(cfg.freecamRoll))
             local smooth = math.clamp(cfg.freecamSmooth, 0, 0.95)
             if fc.smoothed and smooth > 0 then
@@ -4199,14 +4033,12 @@ do
         end
     end))
 
-    -- Used by the Terminate button.
     ESPX.stopFreecam = stopFreecam
     ESPX.getFreecamPos = function()
         if fc.active then return fc.pos end
         return nil
     end
 
-    -- Camera slots: remember a camera position and angle, and fly back to it later (turns Freecam on if needed).
     ESPX.saveCameraSlot = function(index)
         local camera = ws.CurrentCamera
         local position, yaw, pitch
@@ -4236,11 +4068,8 @@ do
     end
 end
 
--- View Line: a red line from each player's head in the direction their head faces, so you can see
--- where they are looking. Drawn with the Drawing library (visible through walls). Own block to stay
--- under the 200-locals limit.
 do
-    local viewLines = {} -- [player] = Drawing line
+    local viewLines = {}
 
     local function removeViewLine(plr)
         local line = viewLines[plr]
@@ -4250,7 +4079,6 @@ do
         end
     end
 
-    -- Used by the Terminate button and when the toggle is switched off.
     ESPX.clearViewLines = function()
         for plr in pairs(viewLines) do removeViewLine(plr) end
     end
@@ -4278,7 +4106,6 @@ do
                 if head and head:IsA("BasePart") and hum and hum.Health > 0 then
                     local a = head.Position
                     local b = a + head.CFrame.LookVector * cfg.viewLineLength
-                    -- Clip the segment to the camera's near plane so it never flips when one end is behind you.
                     local da = -camCF:PointToObjectSpace(a).Z
                     local db = -camCF:PointToObjectSpace(b).Z
                     if da > near or db > near then
@@ -4308,7 +4135,6 @@ do
     end))
 end
 
--- Anti AFK: answers Roblox's idle check so you are not kicked after 20 minutes without input.
 do
     local virtualUser = game:GetService("VirtualUser")
     ESPX.track(lplr.Idled:Connect(function()
@@ -4320,23 +4146,20 @@ do
     end))
 end
 
--- Hitbox Extender (other players): grows the selected body parts into cubes. Head / Body / Legs can be
--- chosen independently. This only changes the parts on YOUR client, so it helps in games whose hit
--- detection runs locally. Own block to stay under the 200-locals limit.
 do
     local PART_TOGGLE = {Head = "HitboxHead"}
     for _, name in ipairs({"HumanoidRootPart", "UpperTorso", "LowerTorso", "Torso"}) do
         PART_TOGGLE[name] = "HitboxBody"
     end
     for _, name in ipairs({
-        "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot", -- R15
-        "Left Leg", "Right Leg", -- R6
+        "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot",
+        "Left Leg", "Right Leg",
     }) do
         PART_TOGGLE[name] = "HitboxLegs"
     end
 
-    local originals = {} -- [part] = its original size / transparency / collision settings
-    local boxes = {}     -- [part] = box that draws the real hitbox size (only while Player ESP is on)
+    local originals = {}
+    local boxes = {}
 
     local function removeBox(part)
         local box = boxes[part]
@@ -4346,8 +4169,6 @@ do
         end
     end
 
-    -- A box with the exact hitbox size, drawn through walls in the Player ESP color. Unlike the avatar's own
-    -- part, it does not depend on the head's mesh or transparency, so it always shows how big the hitbox is.
     local function updateBox(part, plr, size)
         local box = boxes[part]
         if not box or not box.Parent then
@@ -4361,7 +4182,7 @@ do
         end
         box.Size = size
         box.Color3 = ESPX.playerColor(plr)
-        box.Transparency = math.min(math.clamp(cfg.hitboxTransparency, 0, 1), 0.6) -- never fainter than 40%
+        box.Transparency = math.min(math.clamp(cfg.hitboxTransparency, 0, 1), 0.6)
     end
 
     local function restorePart(part)
@@ -4381,7 +4202,6 @@ do
         for part in pairs(originals) do restorePart(part) end
     end
 
-    -- Used by the Terminate button.
     ESPX.restoreHitboxes = restoreAll
 
     task.spawn(function()
@@ -4409,7 +4229,6 @@ do
                                 part.CanCollide = false
                                 part.Massless = true
 
-                                -- Highlighted together with Player ESP: the box only exists while it is on.
                                 if toggles.PlayerESP then
                                     pcall(updateBox, part, plr, size)
                                 else
@@ -4419,7 +4238,6 @@ do
                         end
                     end
                 end
-                -- Put back anything that is no longer selected (or whose player left / respawned).
                 for part in pairs(originals) do
                     if not active[part] then restorePart(part) end
                 end
@@ -4431,19 +4249,15 @@ do
     end)
 end
 
--- Cinematic: Remove UI / Restore UI, near-blur removal and a custom Depth of Field.
--- Remove UI hides the game's own ScreenGuis, Roblox's core UI (chat, player list, backpack, health, emotes,
--- self view) and the top bar with the menu button. Everything is restored exactly as it was.
--- Own block to stay under the 200-locals limit.
 do
     local starterGui = game:GetService("StarterGui")
     local CORE_NAMES = {"Backpack", "Chat", "EmotesMenu", "Health", "PlayerList", "SelfView"}
 
     local hidden = false
-    local guiOriginal = {}       -- [ScreenGui] = Enabled before we hid it
-    local coreOriginal = {}      -- [CoreGuiType name] = enabled before we hid it
-    local topbarCoreOriginal = nil -- SetCore("TopbarEnabled") value before
-    local topBarAppOriginal = nil  -- CoreGui.TopBarApp.Enabled before
+    local guiOriginal = {}
+    local coreOriginal = {}
+    local topbarCoreOriginal = nil
+    local topBarAppOriginal = nil
 
     local function applyHide()
         local playerGui = lplr:FindFirstChildOfClass("PlayerGui")
@@ -4457,7 +4271,6 @@ do
         end
 
         if not hidden then
-            -- First pass: remember how Roblox's own UI was set up.
             hidden = true
             for _, name in ipairs(CORE_NAMES) do
                 local okType, coreType = pcall(function() return Enum.CoreGuiType[name] end)
@@ -4472,7 +4285,6 @@ do
             if topBarApp and topBarApp:IsA("ScreenGui") then topBarAppOriginal = topBarApp.Enabled end
         end
 
-        -- Applied on every pass, because Roblox or the game can switch these back on.
         for name in pairs(coreOriginal) do
             pcall(function() starterGui:SetCoreGuiEnabled(Enum.CoreGuiType[name], false) end)
         end
@@ -4503,8 +4315,7 @@ do
         hidden = false
     end
 
-    -- Near blur: the game's own DepthOfFieldEffects get their near blur set to 0 (far blur is left alone).
-    local nearOriginal = {} -- [DepthOfFieldEffect] = NearIntensity before we zeroed it
+    local nearOriginal = {}
 
     local function applyNearBlurRemoval()
         local function scan(container)
@@ -4527,9 +4338,7 @@ do
         end
     end
 
-    -- Custom Depth of Field: our own effects, controlled by the sliders. Up to 3 identical effects can be
-    -- stacked ("DoF Layers") for a stronger blur than a single effect can give.
-    local dofEffects = {} -- [1..3] = DepthOfFieldEffect
+    local dofEffects = {}
     local focusSmoothed = nil
 
     local function getDofEffect(index)
@@ -4559,8 +4368,6 @@ do
         end
     end
 
-    -- Auto Focus: like a real camera, focus on whatever is in the middle of the screen. The distance is
-    -- smoothed so focus glides between subjects. If nothing is hit (sky), the Focus Distance slider is used.
     ESPX.track(rs.RenderStepped:Connect(function(dt)
         if terminated or not (toggles.CustomDoF and toggles.DoFAutoFocus) then
             focusSmoothed = nil
@@ -4606,7 +4413,6 @@ do
     end)
 
     ESPX.restoreUI = restoreUI
-    -- Used by the Terminate button: puts the UI and lighting effects back and removes our DoF.
     ESPX.restoreCinematic = function()
         restoreUI()
         restoreNearBlur()
@@ -4617,7 +4423,6 @@ do
     end
 end
 
--- Gun FOV (client side only): camera FOV while an ACS gun is held. Own block to stay under the 200-locals limit.
 do
     local function holdingGun()
         local character = lplr.Character
@@ -4626,8 +4431,6 @@ do
         return settingsModule ~= nil and settingsModule:IsA("ModuleScript")
     end
 
-    -- Runs after everything else each frame so the game's own FOV changes do not undo it.
-    -- While you hold right mouse (aiming) the gun's own zoom is left alone.
     local fovApplied = false
     local fovOriginal = nil
     rs:BindToRenderStep("HRSH_GunFOV", Enum.RenderPriority.Last.Value, function()
@@ -4651,7 +4454,6 @@ do
         end
     end)
 
-    -- Used by the Terminate button.
     ESPX.restoreGun = function()
         pcall(function() rs:UnbindFromRenderStep("HRSH_GunFOV") end)
         if fovApplied and fovOriginal then
@@ -4662,15 +4464,10 @@ do
     end
 end
 
--- Fun: Ragdoll and Sit.
--- Ragdoll is a real one: every joint except the root joint is switched off and replaced by a ball-socket
--- constraint, so the limbs flop freely and collide with the world. Sit is just a sit.
--- Own block to stay under the 200-locals limit.
 do
     local ragdoll = {character = nil, created = {}, motors = {}, collide = {}, failed = nil}
     local sitActive = false
 
-    -- Puts a character back on its feet after a ragdoll (keeps the direction it faces).
     local function standUp(character)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         local root = character:FindFirstChild("HumanoidRootPart")
@@ -4691,7 +4488,6 @@ do
         end
     end
 
-    ---------------------------------------------------------------- our own ragdoll
     local function startRagdoll(character)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid or humanoid.Health <= 0 then return false end
@@ -4704,7 +4500,6 @@ do
         humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 
         for _, motor in ipairs(character:GetDescendants()) do
-            -- Root / RootJoint stays, so the body keeps following the HumanoidRootPart.
             if motor:IsA("Motor6D") and motor.Part0 and motor.Part1
                 and motor.Name ~= "RootJoint" and motor.Name ~= "Root" then
                 local attachment0 = Instance.new("Attachment")
@@ -4727,7 +4522,6 @@ do
                 socket.TwistUpperAngle = 45
                 socket.Parent = motor.Part0
 
-                -- Connected parts must not push each other apart, or the joints jitter.
                 local noCollide = Instance.new("NoCollisionConstraint")
                 noCollide.Name = "HRSH_RagdollNoCollide"
                 noCollide.Part0 = motor.Part0
@@ -4739,7 +4533,6 @@ do
                 ragdoll.created[#ragdoll.created + 1] = socket
                 ragdoll.created[#ragdoll.created + 1] = noCollide
 
-                -- Switch the animated joint off (falls back to unparenting it if Enabled is not available).
                 local entry = {motor = motor, parent = motor.Parent, usedEnabled = true}
                 local ok = pcall(function() motor.Enabled = false end)
                 if not ok then
@@ -4750,7 +4543,6 @@ do
             end
         end
 
-        -- Solid body parts, so the limbs land on the ground and on each other.
         for _, part in ipairs(character:GetChildren()) do
             if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
                 ragdoll.collide[part] = part.CanCollide
@@ -4760,7 +4552,6 @@ do
         return true
     end
 
-    -- forget = true when the old character is already gone (respawn): nothing to put back.
     local function stopRagdoll(forget)
         local character = ragdoll.character
         if not character then return end
@@ -4790,10 +4581,9 @@ do
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
             local wantOwn = toggles.Ragdoll
 
-            -- Our own ragdoll
             if wantOwn then
                 if ragdoll.character ~= character then
-                    if ragdoll.character then stopRagdoll(true) end -- the old character respawned away
+                    if ragdoll.character then stopRagdoll(true) end
                     if character and ragdoll.failed ~= character then
                         if not startRagdoll(character) then ragdoll.failed = character end
                     end
@@ -4816,7 +4606,6 @@ do
         end
     end)
 
-    -- Used by the Terminate button.
     ESPX.restoreFun = function()
         pcall(stopRagdoll, false)
         local character = lplr.Character
@@ -4826,19 +4615,15 @@ do
     end
 end
 
--- Reshade: color grading, bloom, sun rays, lighting and shadow offsets and a vignette.
--- It adds its own post effects to Lighting, and changes lighting properties relative to the values it found when
--- it was switched on (so "0" always means "as the game has it"). Switching it off puts everything back.
--- Own block to stay under the 200-locals limit.
 do
     local LIGHT_PROPS = {
         "Brightness", "ExposureCompensation", "GlobalShadows", "ShadowSoftness", "EnvironmentDiffuseScale",
         "EnvironmentSpecularScale", "ClockTime", "Ambient", "OutdoorAmbient",
     }
-    local original = nil     -- lighting values captured when Reshade was switched on
-    local touched = {}       -- lighting properties we have written to
-    local effects = {}       -- [name] = post effect we created
-    local gameEffects = {}   -- [post effect] = Enabled before "Disable Game Effects"
+    local original = nil
+    local touched = {}
+    local effects = {}
+    local gameEffects = {}
     local timeOverridden = false
     local vignetteGui, vignetteGradients = nil, {}
 
@@ -4888,7 +4673,6 @@ do
         sun.Spread = cfg.rsSunSpread
     end
 
-    -- Lighting properties are skipped while Fullbright is on, so the two features never fight over them.
     local function applyLighting(base)
         if toggles.Fullbright then return end
         if base.Brightness then
@@ -4962,7 +4746,6 @@ do
         timeOverridden = false
     end
 
-    -- Vignette: four screen-edge gradients (black at the edge, clear toward the middle).
     local function ensureVignette()
         if vignetteGui and vignetteGui.Parent then return end
         vignetteGradients = {}
@@ -4985,10 +4768,10 @@ do
             frame.Parent = vignetteGui
             vignetteGradients[#vignetteGradients + 1] = gradient
         end
-        edge(UDim2.new(1, 0, 0.4, 0), UDim2.new(0, 0, 0, 0), Vector2.new(0, 0), 90)   -- top
-        edge(UDim2.new(1, 0, 0.4, 0), UDim2.new(0, 0, 1, 0), Vector2.new(0, 1), 270)  -- bottom
-        edge(UDim2.new(0.3, 0, 1, 0), UDim2.new(0, 0, 0, 0), Vector2.new(0, 0), 0)    -- left
-        edge(UDim2.new(0.3, 0, 1, 0), UDim2.new(1, 0, 0, 0), Vector2.new(1, 0), 180)  -- right
+        edge(UDim2.new(1, 0, 0.4, 0), UDim2.new(0, 0, 0, 0), Vector2.new(0, 0), 90)
+        edge(UDim2.new(1, 0, 0.4, 0), UDim2.new(0, 0, 1, 0), Vector2.new(0, 1), 270)
+        edge(UDim2.new(0.3, 0, 1, 0), UDim2.new(0, 0, 0, 0), Vector2.new(0, 0), 0)
+        edge(UDim2.new(0.3, 0, 1, 0), UDim2.new(1, 0, 0, 0), Vector2.new(1, 0), 180)
     end
 
     local function updateVignette()
@@ -5025,7 +4808,6 @@ do
         end
     end)
 
-    -- Presets: every value is reset to neutral first, then the preset's own values are applied.
     local NEUTRAL = {
         rsBrightness = 0, rsContrast = 0, rsSaturation = 0, rsTintHue = 0, rsTintStrength = 0,
         rsBloomIntensity = 0, rsBloomSize = 24, rsBloomThreshold = 2, rsSunIntensity = 0, rsSunSpread = 0.5,
@@ -5065,7 +4847,7 @@ do
             local found = false
             for _, slider in ipairs(ESPX.sliders) do
                 if slider.key == key then
-                    slider.set(value) -- moves the slider and updates cfg
+                    slider.set(value)
                     found = true
                     break
                 end
@@ -5079,7 +4861,6 @@ do
         saveSettings()
     end
 
-    -- Used by the Terminate button.
     ESPX.restoreReshade = function()
         restoreAll()
         if vignetteGui then
@@ -5089,18 +4870,140 @@ do
     end
 end
 
--- Photo extras: freeze your pose, hide the world's clutter, cursor, letterbox bars and a composition grid.
--- Everything is local to your screen and is put back when switched off. Own block to save local slots.
+do
+    local STEPS = 30
+    local segments = {}
+    local marker = nil
+    local rayParams = nil
+
+    local function getParams()
+        if not rayParams then
+            rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        end
+        rayParams.FilterDescendantsInstances = {lplr.Character}
+        return rayParams
+    end
+
+    local function hideAll()
+        for _, line in ipairs(segments) do line.Visible = false end
+        if marker then marker.Visible = false end
+    end
+
+    ESPX.track(rs.RenderStepped:Connect(function()
+        if terminated then return end
+        local camera = ws.CurrentCamera
+        local character = lplr.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not toggles.ProjectilePreview or not camera or not root then
+            hideAll()
+            return
+        end
+
+        local params = getParams()
+        local cameraCFrame = camera.CFrame
+        local look = cameraCFrame.LookVector
+
+        local aimHit = ws:Raycast(cameraCFrame.Position, look * 1000, params)
+        local aimPoint = aimHit and aimHit.Position or (cameraCFrame.Position + look * 1000)
+
+        local flat = Vector3.new(look.X, 0, look.Z)
+        flat = (flat.Magnitude > 0.01) and flat.Unit or root.CFrame.LookVector
+        local start = root.Position + Vector3.new(0, cfg.projHeight, 0) + flat * cfg.projForward
+
+        local toAim = aimPoint - start
+        local direction = (toAim.Magnitude > 0.5) and toAim.Unit or look
+        if cfg.projPitch ~= 0 then
+            local axis = direction:Cross(Vector3.yAxis)
+            if axis.Magnitude > 0.01 then
+                direction = CFrame.fromAxisAngle(axis.Unit, math.rad(cfg.projPitch)):VectorToWorldSpace(direction)
+            end
+        end
+
+        local speed = math.max(cfg.projSpeed, 1)
+        local acceleration = Vector3.new(0, -ws.Gravity * cfg.projGravity, 0)
+        local stepTime = (cfg.projRange / speed) / STEPS
+        local points = {start}
+        local position, velocity = start, direction * speed
+        local hit = nil
+        for _ = 1, STEPS do
+            local nextPosition = position + velocity * stepTime + acceleration * (0.5 * stepTime * stepTime)
+            local result = ws:Raycast(position, nextPosition - position, params)
+            if result then
+                points[#points + 1] = result.Position
+                hit = result
+                break
+            end
+            points[#points + 1] = nextPosition
+            position = nextPosition
+            velocity = velocity + acceleration * stepTime
+        end
+
+        local previous = nil
+        local used = 0
+        for _, point in ipairs(points) do
+            local screen = camera:WorldToViewportPoint(point)
+            local current = (screen.Z > 0) and Vector2.new(screen.X, screen.Y) or nil
+            if previous and current then
+                used += 1
+                local line = segments[used]
+                if not line then
+                    line = Drawing.new("Line")
+                    line.Thickness = 2
+                    line.Color = Color3.fromRGB(255, 170, 0)
+                    segments[used] = line
+                end
+                line.From = previous
+                line.To = current
+                line.Visible = true
+            end
+            previous = current
+        end
+        for index = used + 1, #segments do segments[index].Visible = false end
+
+        if hit then
+            local screen = camera:WorldToViewportPoint(hit.Position)
+            if screen.Z > 0 then
+                if not marker then
+                    marker = Drawing.new("Circle")
+                    marker.NumSides = 24
+                    marker.Radius = 8
+                    marker.Thickness = 2
+                    marker.Filled = false
+                end
+                local model = hit.Instance:FindFirstAncestorOfClass("Model")
+                local onCharacter = model and model:FindFirstChildOfClass("Humanoid") ~= nil
+                marker.Color = onCharacter and Color3.fromRGB(255, 40, 40) or Color3.fromRGB(255, 255, 255)
+                marker.Position = Vector2.new(screen.X, screen.Y)
+                marker.Visible = true
+            elseif marker then
+                marker.Visible = false
+            end
+        elseif marker then
+            marker.Visible = false
+        end
+    end))
+
+    ESPX.restoreProjectile = function()
+        for _, line in ipairs(segments) do pcall(function() line:Remove() end) end
+        segments = {}
+        if marker then
+            pcall(function() marker:Remove() end)
+            marker = nil
+        end
+    end
+end
+
 do
     local CLEAN_KEYS = {
         "ESP", "EnemyHP", "PlayerESP", "SelfHP", "ItemESP", "GeneratorESP",
         "Crosshair", "HeadArrow", "ViewLine", "HitboxExtender",
     }
-    local frozenTracks = {}   -- [AnimationTrack] = its speed before freezing
-    local cleanSaved = nil    -- the toggles Clean Shot switched off
+    local frozenTracks = {}
+    local cleanSaved = nil
     local lastClean = false
-    local nameOriginal = {}   -- [Humanoid] = {DisplayDistanceType, HealthDisplayType}
-    local hiddenByModel = {}  -- [model] = {[item] = LocalTransparencyModifier before hiding}
+    local nameOriginal = {}
+    local hiddenByModel = {}
     local cursorOriginal = nil
     local barsGui, barFrames = nil, {}
     local gridGui = nil
@@ -5122,7 +5025,6 @@ do
         end
     end
 
-    -- Clean Shot: switches off every overlay feature (ESP, labels, crosshair ...) and brings back the ones that were on.
     local function updateCleanShot()
         if toggles.CleanShot == lastClean then return end
         lastClean = toggles.CleanShot
@@ -5187,7 +5089,6 @@ do
         hiddenByModel[model] = nil
     end
 
-    -- Hide Other Players / Hide NPCs: makes those characters invisible on your screen only.
     local function updateHidden()
         local wanted = {}
         if toggles.HideOthers then
@@ -5223,7 +5124,6 @@ do
         end
     end
 
-    -- The cursor is only hidden while the menu is closed, so the menu stays usable.
     local function updateCursor()
         if toggles.HideCursor and not main.Visible then
             if cursorOriginal == nil then cursorOriginal = uis.MouseIconEnabled end
@@ -5267,7 +5167,6 @@ do
         end
     end
 
-    -- Rule-of-thirds lines (plus a faint center cross) as a composition aid.
     local function updateGrid()
         if toggles.PhotoGrid then
             if not (gridGui and gridGui.Parent) then
@@ -5301,7 +5200,7 @@ do
             updateCursor()
             updateBars()
             updateGrid()
-            if pass % 5 == 0 then -- the heavier scans only twice a second
+            if pass % 5 == 0 then
                 updateNametags()
                 updateHidden()
             end
@@ -5310,7 +5209,6 @@ do
         end
     end)
 
-    -- Used by the Terminate button.
     ESPX.restorePhoto = function()
         for track, speed in pairs(frozenTracks) do
             pcall(function() track:AdjustSpeed(speed) end)
@@ -5335,7 +5233,6 @@ do
     end
 end
 
--- Generator ESP (orange, styled like Player ESP) + Terminate button
 do
     local function getGeneratorColor()
         return Color3.fromHSV(math.clamp(cfg.genHue, 0, 360) / 360, 1, 1)
@@ -5346,12 +5243,9 @@ do
         return model:FindFirstChildWhichIsA("BasePart", true)
     end
 
-    -- Generator progress: the game's repair script is not readable from here, so this looks for a
-    -- number/string stored as an Attribute or a Value object whose name sounds like progress.
-    -- The first match is cached per generator.
     local PROGRESS_KEYWORDS = {"progress", "percent", "repair", "complet", "charge", "fixed", "fuel"}
-    local progressSource = {}   -- [model] = {inst = Instance, attr = string?} or false
-    local progressSearched = {} -- [model] = os.clock() of the last failed search
+    local progressSource = {}
+    local progressSearched = {}
 
     local function nameLooksLikeProgress(name)
         local n = string.lower(name)
@@ -5383,7 +5277,7 @@ do
         if src and (not src.inst.Parent) then src = nil; progressSource[model] = nil end
         if not src then
             local last = progressSearched[model]
-            if last and os.clock() - last < 5 then return nil end -- retry a failed search every 5s
+            if last and os.clock() - last < 5 then return nil end
             src = findProgressSource(model)
             if not src then
                 progressSearched[model] = os.clock()
@@ -5409,18 +5303,15 @@ do
         return string.format("%s: %s", shownName, tostring(value))
     end
 
-    -- This game stores generator state as Attributes on the Generator model:
-    -- RepairProgress, ProgressPaused, PlayersRepairingCount and kickcount.
     local function getGeneratorStatusLines(model)
         local lines = {}
         local progress = model:GetAttribute("RepairProgress")
         if type(progress) == "number" then
-            -- Handles both a 0-100 scale and a 0-1 fraction.
             local pct = (progress > 0 and progress < 1) and (progress * 100) or progress
             pct = math.clamp(math.floor(pct + 0.5), 0, 100)
             lines[#lines + 1] = (pct >= 100) and "REPAIRED" or string.format("Repair: %d%%", pct)
         else
-            local fallback = getProgressText(model) -- generic search for other games/maps
+            local fallback = getProgressText(model)
             if fallback then lines[#lines + 1] = fallback end
         end
 
@@ -5441,7 +5332,6 @@ do
     local function addGeneratorESP(model)
         if not model or not model.Parent then return end
 
-        -- Highlight: same style as Player ESP (50% fill, white outline, always on top)
         local hl = model:FindFirstChild("GeneratorHighlight")
         if not hl then
             hl = Instance.new("Highlight")
@@ -5457,7 +5347,6 @@ do
         hl.OutlineTransparency = 1 - math.clamp(cfg.genOutlineOpacity, 0, 1)
         hl.Enabled = true
 
-        -- Info label: name + distance, like Player ESP
         local anchor = getGeneratorAnchor(model)
         if not anchor then return end
 
@@ -5511,8 +5400,6 @@ do
         end
     end
 
-    -- Finds "Generator" models. Checks Workspace.Map.Generators first; if that path
-    -- is missing/empty (different map, streaming), falls back to scanning all of Workspace.
     local function findGenerators()
         local found = {}
         local map = ws:FindFirstChild("Map")
@@ -5545,7 +5432,6 @@ do
             if toggles.GeneratorESP then
                 wasOn = true
                 fullScanTimer += 0.25
-                -- Re-discover generators once per second; refresh labels every 0.25s.
                 if fullScanTimer >= 1 or #cached == 0 then
                     fullScanTimer = 0
                     cached = findGenerators()
@@ -5562,10 +5448,7 @@ do
         end
     end)
 
-    -- Head marker (Cyberpunk 2077 scanner style): a small diamond over a double chevron that bobs
-    -- toward the target and blinks. Built from frames so it never depends on font glyphs, and
-    -- recolored every refresh to match the target's ESP highlight.
-    local headArrows = {} -- [model] = BillboardGui
+    local headArrows = {}
 
     local function buildArrow()
         local gui = Instance.new("BillboardGui")
@@ -5594,13 +5477,11 @@ do
         end
 
         local diamond = piece("Diamond", Vector2.new(5, 5), Vector2.new(15, 4), 45)
-        -- Outer chevron (tip at y = 18), then a smaller, fainter one below it (tip at y = 27).
         piece("OuterLeft", Vector2.new(10, 3), Vector2.new(11.5, 14.5), 45)
         piece("OuterRight", Vector2.new(10, 3), Vector2.new(18.5, 14.5), -45)
         piece("InnerLeft", Vector2.new(7, 2), Vector2.new(12.5, 24.5), 45, 0.35)
         piece("InnerRight", Vector2.new(7, 2), Vector2.new(17.5, 24.5), -45, 0.35)
 
-        -- Bob toward the target and blink the diamond (tweens stop when the GUI is destroyed).
         TweenService:Create(
             holder,
             TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
@@ -5655,7 +5536,7 @@ do
                 for _, npc in ipairs(validTargets) do
                     if npc.Parent then
                         seen[npc] = true
-                        setArrow(npc, cfg.espFill) -- same color as NPC ESP
+                        setArrow(npc, cfg.espFill)
                     end
                 end
                 for _, plr in ipairs(plrs:GetPlayers()) do
@@ -5663,7 +5544,7 @@ do
                     local hum = char and char:FindFirstChildOfClass("Humanoid")
                     if plr ~= lplr and char and hum and hum.Health > 0 then
                         seen[char] = true
-                        setArrow(char, ESPX.playerColor(plr)) -- same color as Player ESP
+                        setArrow(char, ESPX.playerColor(plr))
                     end
                 end
                 for model, gui in pairs(headArrows) do
@@ -5680,11 +5561,9 @@ do
         end
     end)
 
-    -- Terminate button (Settings tab)
     setTab("Settings")
     createSection("[ DANGER ZONE ]")
     createActionButton("Terminate", function()
-        -- Stop all saving first, so nothing below can write to the file.
         terminated = true
 
         for key in pairs(toggles) do toggles[key] = false end
@@ -5702,6 +5581,7 @@ do
         pcall(ESPX.restoreFun)
         pcall(ESPX.restoreReshade)
         pcall(ESPX.restorePhoto)
+        pcall(ESPX.restoreProjectile)
         pcall(ESPX.stopFreecam)
         pcall(ESPX.clearViewLines)
         pcall(ESPX.restoreHitboxes)
@@ -5720,7 +5600,6 @@ do
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then hum.WalkSpeed = 16 end
 
-        -- Disconnect every tracked service connection (input, render loops, player/workspace events).
         for _, connection in ipairs(ESPX.conns) do
             pcall(function() connection:Disconnect() end)
         end
