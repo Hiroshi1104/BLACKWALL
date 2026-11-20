@@ -598,7 +598,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: PROJECTILE"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: PROJECTILE-DEBUG"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -2495,9 +2495,293 @@ function ESPX.serverHop()
     teleportService:TeleportToPlaceInstance(game.PlaceId, choices[math.random(#choices)], lplr)
 end
 
+function ESPX.dumpKillerInfo()
+    local lines = {}
+    local MAX_LINES = 900
+    local function add(text)
+        if #lines < MAX_LINES then
+            lines[#lines + 1] = text
+        elseif #lines == MAX_LINES then
+            lines[#lines + 1] = "... (output truncated)"
+        end
+    end
+
+    local NOISE = {
+        "ParticleEmitter", "Attachment", "Motor6D", "Weld", "WeldConstraint", "SurfaceAppearance", "Decal",
+        "Texture", "Trail", "Beam", "SpecialMesh", "PointLight", "SpotLight", "SurfaceLight", "Highlight",
+        "Sound", "Animation", "UICorner", "UIStroke", "UIListLayout", "Accessory", "Clothing", "BodyColors",
+    }
+    local function isNoise(inst)
+        for _, className in ipairs(NOISE) do
+            if inst:IsA(className) then return true end
+        end
+        return false
+    end
+    local function describe(inst, depth)
+        local line = string.rep("  ", depth) .. inst.Name .. " [" .. inst.ClassName .. "]"
+        if inst:IsA("ValueBase") then
+            pcall(function() line = line .. " = " .. tostring(inst.Value) end)
+        end
+        for attrName, attrValue in pairs(inst:GetAttributes()) do
+            line = line .. "  @" .. attrName .. "=" .. tostring(attrValue)
+        end
+        add(line)
+    end
+    local function walk(root, depth, maxDepth)
+        describe(root, depth)
+        local children = root:GetChildren()
+        if depth >= maxDepth then
+            if #children > 0 then add(string.rep("  ", depth + 1) .. "... (" .. #children .. " children not shown)") end
+            return
+        end
+        local hidden = 0
+        for _, child in ipairs(children) do
+            if isNoise(child) then
+                hidden += 1
+            else
+                walk(child, depth + 1, maxDepth)
+            end
+        end
+        if hidden > 0 then add(string.rep("  ", depth + 1) .. "(" .. hidden .. " visual/helper instances hidden)") end
+    end
+
+    local character = lplr.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local backpack = lplr:FindFirstChildOfClass("Backpack")
+
+    add("PlaceId: " .. tostring(game.PlaceId) .. "   World gravity: " .. tostring(ws.Gravity))
+    add("")
+    add("== ATTRIBUTES (player / character / humanoid) ==")
+    for label, inst in pairs({player = lplr, character = character, humanoid = humanoid}) do
+        if inst then
+            for attrName, attrValue in pairs(inst:GetAttributes()) do
+                add(label .. " @" .. attrName .. " = " .. tostring(attrValue))
+            end
+        end
+    end
+    add("Team: " .. (lplr.Team and lplr.Team.Name or "none"))
+
+    add("")
+    add("== CHARACTER (structure) ==")
+    if character then walk(character, 0, 3) else add("(no character)") end
+
+    add("")
+    add("== TOOLS ==")
+    local tools = {}
+    for _, container in ipairs({character, backpack}) do
+        if container then
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("Tool") then tools[#tools + 1] = child end
+            end
+        end
+    end
+    if #tools == 0 then add("(no tools)") end
+    for _, tool in ipairs(tools) do walk(tool, 0, 5) end
+
+    add("")
+    add("== ABILITY-LOOKING INSTANCES (path only) ==")
+    local KEYWORDS = {"veil", "spear", "lance", "projectile", "ability", "skill", "killer", "throw", "weapon", "damage", "hitbox"}
+    local function looksLikeAbility(name)
+        local lowered = string.lower(name)
+        for _, keyword in ipairs(KEYWORDS) do
+            if string.find(lowered, keyword, 1, true) then return true end
+        end
+        return false
+    end
+    local CONFIG_WORDS = {"setting", "config", "stat", "data", "info"}
+    local function looksLikeConfig(name)
+        local lowered = string.lower(name)
+        for _, word in ipairs(CONFIG_WORDS) do
+            if string.find(lowered, word, 1, true) then return true end
+        end
+        return false
+    end
+
+    local replicated = game:GetService("ReplicatedStorage")
+    local containers = {character, backpack, lplr:FindFirstChildOfClass("PlayerGui"), replicated}
+    local readable = {}
+    local matches = 0
+    for _, container in ipairs(containers) do
+        if container then
+            for _, item in ipairs(container:GetDescendants()) do
+                if looksLikeAbility(item.Name) and (
+                    item:IsA("LuaSourceContainer") or item:IsA("RemoteEvent") or item:IsA("RemoteFunction")
+                    or item:IsA("BindableEvent") or item:IsA("Configuration") or item:IsA("Folder") or item:IsA("Model")
+                ) then
+                    matches += 1
+                    if matches <= 150 then add(item.ClassName .. "  " .. item:GetFullName()) end
+                end
+                if item:IsA("ModuleScript") and #readable < 8 then
+                    local ownTool = (container == character or container == backpack) and (looksLikeAbility(item.Name) or looksLikeConfig(item.Name))
+                    local configLike = container == replicated and looksLikeConfig(item.Name) and looksLikeAbility(item:GetFullName())
+                    if ownTool or configLike then readable[#readable + 1] = item end
+                end
+            end
+        end
+    end
+    if matches > 150 then add("... (" .. (matches - 150) .. " more not shown)") end
+    if matches == 0 then add("(nothing matched)") end
+
+    local function format(value)
+        local kind = typeof(value)
+        if kind == "function" then return "<function>" end
+        return tostring(value) .. "  (" .. kind .. ")"
+    end
+    local function dumpTable(tbl, depth, seen, budget)
+        local keys = {}
+        for key in pairs(tbl) do keys[#keys + 1] = key end
+        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+        for _, key in ipairs(keys) do
+            if budget.left <= 0 then return end
+            budget.left -= 1
+            local value = tbl[key]
+            local indent = string.rep("  ", depth)
+            if type(value) == "table" then
+                if seen[value] or depth >= 2 then
+                    add(indent .. tostring(key) .. " = <table>")
+                else
+                    seen[value] = true
+                    add(indent .. tostring(key) .. " = {")
+                    dumpTable(value, depth + 1, seen, budget)
+                    add(indent .. "}")
+                end
+            else
+                add(indent .. tostring(key) .. " = " .. format(value))
+            end
+        end
+    end
+    for _, moduleScript in ipairs(readable) do
+        add("")
+        add("== VALUES OF " .. moduleScript:GetFullName() .. " ==")
+        local ok, result = pcall(require, moduleScript)
+        if not ok then
+            add("(could not read it: " .. tostring(result) .. ")")
+        elseif type(result) == "table" then
+            dumpTable(result, 0, {[result] = true}, {left = 80})
+        else
+            add(format(result))
+        end
+    end
+
+    local text = table.concat(lines, "\n")
+    print(text)
+    local copyFn = setclipboard or toclipboard
+    if type(copyFn) == "function" then pcall(copyFn, text) end
+    return "[" .. #lines .. " LINES]"
+end
+
+function ESPX.recordProjectiles()
+    if ESPX.recordingProjectiles then error("Already recording") end
+    ESPX.recordingProjectiles = true
+    local DURATION = 10
+    local tracked, order = {}, {}
+
+    local added = ws.DescendantAdded:Connect(function(item)
+        if #order >= 80 or not item:IsA("BasePart") then return end
+        local model = item:FindFirstAncestorOfClass("Model")
+        if model and plrs:GetPlayerFromCharacter(model) then return end
+        tracked[item] = {birth = os.clock(), samples = {}, velocity = item.AssemblyLinearVelocity}
+        order[#order + 1] = item
+    end)
+    local beat = rs.Heartbeat:Connect(function()
+        local now = os.clock()
+        for _, part in ipairs(order) do
+            local info = tracked[part]
+            if info and part.Parent and now - info.birth < 2 and #info.samples < 150 then
+                info.samples[#info.samples + 1] = {now, part.Position}
+            end
+        end
+    end)
+
+    task.spawn(function()
+        task.wait(DURATION)
+        added:Disconnect()
+        beat:Disconnect()
+        ESPX.recordingProjectiles = false
+
+        local function median(list)
+            if #list == 0 then return nil end
+            table.sort(list)
+            return list[math.ceil(#list / 2)]
+        end
+
+        local reports = {}
+        for _, part in ipairs(order) do
+            local info = tracked[part]
+            local samples = info.samples
+            if #samples >= 5 then
+                local first, last = samples[1], samples[#samples]
+                local distance = (last[2] - first[2]).Magnitude
+                local duration = last[1] - first[1]
+                if distance >= 8 and duration > 0 then
+                    local early = math.min(#samples, 6)
+                    local initialSpeed = (samples[early][2] - first[2]).Magnitude / math.max(samples[early][1] - first[1], 1e-3)
+                    local accelerations = {}
+                    local gap = 3
+                    for index = 1, #samples - 2 * gap do
+                        local a, b, c = samples[index], samples[index + gap], samples[index + 2 * gap]
+                        local v1 = (b[2].Y - a[2].Y) / math.max(b[1] - a[1], 1e-3)
+                        local v2 = (c[2].Y - b[2].Y) / math.max(c[1] - b[1], 1e-3)
+                        accelerations[#accelerations + 1] = (v2 - v1) / math.max((c[1] - a[1]) / 2, 1e-3)
+                    end
+                    reports[#reports + 1] = {
+                        part = part, distance = distance, duration = duration,
+                        speed = distance / duration, initialSpeed = initialSpeed,
+                        accel = median(accelerations), info = info,
+                    }
+                end
+            end
+        end
+        table.sort(reports, function(a, b) return a.distance > b.distance end)
+
+        local lines = {"World gravity: " .. tostring(ws.Gravity), "New parts seen: " .. #order, ""}
+        if #reports == 0 then
+            lines[#lines + 1] = "No new part travelled 8+ studs. The projectile may be created before this was pressed,"
+            lines[#lines + 1] = "or it may be moved by a script that does not create a new part."
+        end
+        for index = 1, math.min(#reports, 6) do
+            local report = reports[index]
+            local part = report.part
+            lines[#lines + 1] = "-- #" .. index .. "  " .. part.Name .. " [" .. part.ClassName .. "]"
+            lines[#lines + 1] = "path: " .. part:GetFullName()
+            lines[#lines + 1] = string.format("size: %s   anchored: %s", tostring(part.Size), tostring(part.Anchored))
+            lines[#lines + 1] = string.format("travelled %.1f studs in %.2f s", report.distance, report.duration)
+            lines[#lines + 1] = string.format("average speed %.1f studs/s, speed over the first frames %.1f studs/s",
+                report.speed, report.initialSpeed)
+            lines[#lines + 1] = "velocity right after it appeared: " .. tostring(report.info.velocity)
+            if report.accel then
+                lines[#lines + 1] = string.format("vertical acceleration about %.1f studs/s^2 (%.2f x world gravity)",
+                    report.accel, -report.accel / math.max(ws.Gravity, 1))
+            end
+            for attrName, attrValue in pairs(part:GetAttributes()) do
+                lines[#lines + 1] = "@" .. attrName .. " = " .. tostring(attrValue)
+            end
+            if part.Parent and part.Parent:IsA("Model") then
+                for attrName, attrValue in pairs(part.Parent:GetAttributes()) do
+                    lines[#lines + 1] = "model @" .. attrName .. " = " .. tostring(attrValue)
+                end
+            end
+            lines[#lines + 1] = string.format(
+                "suggested sliders: Projectile Speed ~ %.0f, Projectile Gravity ~ %.2f",
+                report.initialSpeed, math.max(0, report.accel and (-report.accel / math.max(ws.Gravity, 1)) or 0)
+            )
+            lines[#lines + 1] = ""
+        end
+        local text = table.concat(lines, "\n")
+        print(text)
+        local copyFn = setclipboard or toclipboard
+        if type(copyFn) == "function" then pcall(copyFn, text) end
+    end)
+    return "[RECORDING " .. DURATION .. "s - THROW NOW]"
+end
+
 createSection("[ SERVER ]")
 createActionButton("Rejoin Server", function() ESPX.rejoin() end)
 createActionButton("Server Hop", function() ESPX.serverHop() end)
+
+createSection("[ DEBUG ]")
+createActionButton("Dump Killer Info", function() return ESPX.dumpKillerInfo() end)
+createActionButton("Record Projectile (10s)", function() return ESPX.recordProjectiles() end)
 
 do
     local bindsFile = "HRSH_MenuBinds.json"
