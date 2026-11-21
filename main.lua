@@ -117,7 +117,7 @@ local cfg = {
     camFov = 70,
     freecamSpeed = 50,
     viewLineLength = 60,
-    projSpeed = 150, projGravity = 0.3, projRange = 300, projPitch = 0, projHeight = 1.5, projForward = 2,
+    projSpeed = 158, projGravity = 0.47, projRange = 300, projPitch = 0, projHeight = 1.5, projForward = 2,
     hitboxSize = 8,
     hitboxTransparency = 0.7,
     dofFar = 0.8,
@@ -598,7 +598,7 @@ footerLeft.BackgroundTransparency = 1
 footerLeft.Position = UDim2.new(0, 10, 0, 1)
 footerLeft.Size = UDim2.new(0.6, 0, 1, -1)
 footerLeft.Font = Enum.Font.Code
-footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: PROJECTILE-DEBUG"
+footerLeft.Text = "NETRUNNER  ▸  " .. string.upper(lplr.Name) .. "  •  BUILD: VEIL-PREVIEW"
 footerLeft.TextColor3 = C.muted
 footerLeft.TextSize = 9
 footerLeft.TextXAlignment = Enum.TextXAlignment.Left
@@ -1138,6 +1138,20 @@ createToggle("View Line", "ViewLine")
 createSlider("View Line Length", 10, 300, cfg.viewLineLength, function(v) cfg.viewLineLength = v end, "viewLineLength")
 createSection("[ PROJECTILE PREVIEW ]")
 createToggle("Projectile Preview", "ProjectilePreview")
+createActionButton("Use Veil Spear Values", function()
+    for _, slider in ipairs(ESPX.sliders) do
+        if slider.key == "projSpeed" then slider.set(158)
+        elseif slider.key == "projGravity" then slider.set(0.47)
+        elseif slider.key == "projRange" then slider.set(300)
+        elseif slider.key == "projPitch" then slider.set(0) end
+    end
+    if not toggles.ProjectilePreview then
+        toggles.ProjectilePreview = true
+        if ESPX.togglePaints.ProjectilePreview then ESPX.togglePaints.ProjectilePreview() end
+    end
+    saveSettings()
+    return "[VEIL SPEAR]"
+end)
 createSlider("Projectile Speed", 20, 500, cfg.projSpeed, function(v) cfg.projSpeed = v end, "projSpeed")
 createSlider("Projectile Gravity", 0, 2, cfg.projGravity, function(v) cfg.projGravity = v end, "projGravity")
 createSlider("Projectile Range", 50, 1000, cfg.projRange, function(v) cfg.projRange = v end, "projRange")
@@ -2670,6 +2684,128 @@ function ESPX.dumpKillerInfo()
     return "[" .. #lines .. " LINES]"
 end
 
+function ESPX.dumpVeilSpear()
+    local lines = {}
+    local MAX_LINES = 600
+    local function add(text)
+        if #lines < MAX_LINES then
+            lines[#lines + 1] = text
+        elseif #lines == MAX_LINES then
+            lines[#lines + 1] = "... (output truncated)"
+        end
+    end
+    local function format(value)
+        local kind = typeof(value)
+        if kind == "function" then
+            local details = ""
+            pcall(function()
+                local params, vararg = debug.info(value, "a")
+                details = " params=" .. tostring(params) .. (vararg and "+vararg" or "")
+            end)
+            return "<function" .. details .. ">"
+        end
+        return tostring(value) .. "  (" .. kind .. ")"
+    end
+    local function dumpTable(tbl, depth, seen, budget)
+        local keys = {}
+        for key in pairs(tbl) do keys[#keys + 1] = key end
+        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+        for _, key in ipairs(keys) do
+            if budget.left <= 0 then
+                add(string.rep("  ", depth) .. "... (more not shown)")
+                return
+            end
+            budget.left -= 1
+            local value = tbl[key]
+            local indent = string.rep("  ", depth)
+            if type(value) == "table" then
+                if seen[value] or depth >= 3 then
+                    add(indent .. tostring(key) .. " = <table>")
+                else
+                    seen[value] = true
+                    add(indent .. tostring(key) .. " = {")
+                    dumpTable(value, depth + 1, seen, budget)
+                    add(indent .. "}")
+                end
+            else
+                add(indent .. tostring(key) .. " = " .. format(value))
+            end
+        end
+    end
+
+    local replicated = game:GetService("ReplicatedStorage")
+    local function find(path)
+        local node = replicated
+        for part in string.gmatch(path, "[^%.]+") do
+            node = node and node:FindFirstChild(part)
+        end
+        return node
+    end
+
+    add("World gravity: " .. tostring(ws.Gravity))
+    local veilFolder = find("Modules.Killers.Veil")
+    add("")
+    add("== ReplicatedStorage.Modules.Killers.Veil contains ==")
+    if veilFolder then
+        for _, child in ipairs(veilFolder:GetChildren()) do add(child.ClassName .. "  " .. child.Name) end
+    else
+        add("(folder not found)")
+    end
+
+    for _, path in ipairs({
+        "Modules.Killers.Veil.SpearMath",
+        "Modules.Killers.Veil.SpearWorld",
+        "Modules.Killers.Veil.SpearDebugClient",
+        "Modules.World.ProjectileVisualsClient",
+    }) do
+        add("")
+        add("== VALUES OF ReplicatedStorage." .. path .. " ==")
+        local moduleScript = find(path)
+        if not (moduleScript and moduleScript:IsA("ModuleScript")) then
+            add("(not found)")
+        else
+            local ok, result = pcall(require, moduleScript)
+            if not ok then
+                add("(could not read it: " .. tostring(result) .. ")")
+            elseif type(result) == "table" then
+                dumpTable(result, 0, {[result] = true}, {left = 120})
+            else
+                add(format(result))
+            end
+        end
+    end
+
+    add("")
+    add("== YOUR SPEAR MODEL (positions relative to your HumanoidRootPart) ==")
+    local character = lplr.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local spear = character and character:FindFirstChild("Spear")
+    if not (root and spear) then
+        add("(no Spear model on your character - play as Veil)")
+    else
+        for _, item in ipairs(spear:GetDescendants()) do
+            if item:IsA("BasePart") then
+                local offset = root.CFrame:ToObjectSpace(item.CFrame).Position
+                local line = string.format("%s [%s] offset=%s size=%s anchored=%s", item.Name, item.ClassName,
+                    tostring(offset), tostring(item.Size), tostring(item.Anchored))
+                for attrName, attrValue in pairs(item:GetAttributes()) do
+                    line = line .. "  @" .. attrName .. "=" .. tostring(attrValue)
+                end
+                add(line)
+            end
+        end
+        for attrName, attrValue in pairs(spear:GetAttributes()) do
+            add("Spear @" .. attrName .. " = " .. tostring(attrValue))
+        end
+    end
+
+    local text = table.concat(lines, "\n")
+    print(text)
+    local copyFn = setclipboard or toclipboard
+    if type(copyFn) == "function" then pcall(copyFn, text) end
+    return "[" .. #lines .. " LINES]"
+end
+
 function ESPX.recordProjectiles()
     if ESPX.recordingProjectiles then error("Already recording") end
     ESPX.recordingProjectiles = true
@@ -2781,6 +2917,7 @@ createActionButton("Server Hop", function() ESPX.serverHop() end)
 
 createSection("[ DEBUG ]")
 createActionButton("Dump Killer Info", function() return ESPX.dumpKillerInfo() end)
+createActionButton("Dump Veil Spear", function() return ESPX.dumpVeilSpear() end)
 createActionButton("Record Projectile (10s)", function() return ESPX.recordProjectiles() end)
 
 do
